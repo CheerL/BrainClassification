@@ -8,6 +8,16 @@ import os
 from tqdm import tqdm
 from collections import deque
 
+def lazy_property(func):
+    attr_name = "_lazy_" + func.__name__
+
+    @property
+    def _lazy_property(self):
+        if not hasattr(self, attr_name):
+            setattr(self, attr_name, func(self))
+        return getattr(self, attr_name)
+
+    return _lazy_property
 
 class DataManager(object):
     def __init__(self, srcFolder, resultsDir, parameters, probabilityMap=False, mods=['t1']):
@@ -22,12 +32,29 @@ class DataManager(object):
         self.sitkImage = dict()
         self.sitkGT = dict()
         self.test_rate = 0.1
-        self.numpyImage = 0
-        self.numpyGT = 0
+        self.numpyData = None
         self.meanIntensityTrain = None
         self.originalSizes = dict()
 
         self.createFileList()
+
+        self._dim = 0
+
+    @property
+    def dim(self):
+        return self._dim
+
+    @dim.setter
+    def dim(self, val):
+        self._dim = val
+        if hasattr(self, '_lazy_left_dim'):
+            delattr(self, '_lazy_left_dim')
+
+    @lazy_property
+    def left_dim(self):
+        left_dim = set(range(3))
+        left_dim.remove(self.dim)
+        return tuple(left_dim)
 
     def createFileList(self):
         ''' find all directories containing images and put there name in the fileList'''
@@ -64,7 +91,7 @@ class DataManager(object):
         ''' load labels from label.nii'''
         raise NotImplementedError()
 
-    def loadTrainingData(self):
+    def loadTrainData(self):
         ''' load training data'''
         if not (self.trainList and self.testList):
             self.splitData()
@@ -87,22 +114,26 @@ class DataManager(object):
         self.testList = [path for i, path in enumerate(self.fileList) if i in test_num_list]
         self.trainList = [path for i, path in enumerate(self.fileList) if i not in test_num_list]
 
-    def getNumpyImage(self):
-        self.numpyImage =  self.getNumpyData(self.sitkImage, sitk.sitkLinear)
+    def getTrainNumpyData(self, file_list=None):
+        if file_list is None:
+            file_list = self.trainList
 
-    def getNumpyGT(self):
-        self.numpyGT = self.getNumpyData(self.sitkGT, sitk.sitkLinear)
+        self.loadTrainData()
+        self.numpyData = self.getNumpyData(file_list, sitk.sitkLinear)
 
-    def getNumpyData(self, dat, method):
+    def getTestNumpyData(self, file_list=None):
+        if file_list is None:
+            file_list = self.testList
+
+        self.loadTestData()
+        self.numpyData = self.getNumpyData(file_list, sitk.sitkLinear)
+
+    def getNumpyData(self, data, method):
         ''' load numpy data from sitk data'''
         raise NotImplementedError()
 
     def writeResultsFromNumpyLabel(self, result, key):
         ''' save the segmentation results to the result directory'''
-        # toWrite=sitk.Image(img.GetSize()[0],img.GetSize()[1],img.GetSize()[2],sitk.sitkFloat32)
-
-        # resize to the original size
-        #result = skimage.transform.resize(result, self.originalSizes[key], order=3, mode='reflect', preserve_range=True)
         result = np.transpose(result, [2, 1, 0])
 
         if self.probabilityMap:
