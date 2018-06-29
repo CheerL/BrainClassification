@@ -25,7 +25,7 @@ def subsample(inputs, factor, scope=None):
     if factor == 1:
         return inputs
     else:
-        return slim.max_pool2d(inputs, [1, 1], stride=factor, scope=scope)
+        return slim.max_pool2d(inputs, 1, stride=factor, scope=scope)
 
 # 定义堆叠Blocks函数，两层循环
 @slim.add_arg_scope
@@ -77,11 +77,11 @@ def bottleneck(inputs, depth, depth_bottleneck, stride,
         if depth == depth_in:
             shortcut = subsample(preact, stride, 'shortcut')
         else:
-            shortcut = slim.conv2d(preact, depth, [1, 1], stride=stride, activation_fn=None, normalizer_fn=None, scope='shortcut')
+            shortcut = slim.conv2d(preact, depth, 1, stride=stride, activation_fn=None, normalizer_fn=None, scope='shortcut')
 
-        residual = slim.conv2d(preact, depth_bottleneck, [1, 1], stride=1, scope='conv1')
+        residual = slim.conv2d(preact, depth_bottleneck, 1, stride=1, scope='conv1')
         residual = slim.conv2d(residual, depth_bottleneck, 3, stride=stride, padding='SAME', scope='conv2')
-        residual = slim.conv2d(residual, depth, [1, 1], stride=1, activation_fn=None, normalizer_fn=None, scope='conv3')
+        residual = slim.conv2d(residual, depth, 1, stride=1, activation_fn=None, normalizer_fn=None, scope='conv3')
 
         output = tf.add(shortcut, residual)
 
@@ -108,7 +108,7 @@ def resnet_v2(inputs, blocks, num_classes=None, global_pool=True,
                 # Global average pooling.
                 net = tf.reduce_mean(net, [1, 2], name='pool5', keepdims=True)
             if num_classes is not None:
-                net = slim.conv2d(net, num_classes, [1, 1], activation_fn=None, normalizer_fn=None, scope='logits')
+                net = slim.conv2d(net, num_classes, 1, activation_fn=None, normalizer_fn=None, scope='logits')
             # Convert end_points_collection into a dictionary of end_points.
             end_points = slim.utils.convert_collection_to_dict(end_points_collection)
             if num_classes is not None:
