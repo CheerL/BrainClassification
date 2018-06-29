@@ -1,12 +1,12 @@
-import numpy as np
-import SimpleITK as sitk
+import os
 #import cv2
 import random
-import copy
-import math
-import os
-from tqdm import tqdm
 from collections import deque
+
+import numpy as np
+import SimpleITK as sitk
+from tqdm import tqdm
+
 
 def lazy_property(func):
     attr_name = "_lazy_" + func.__name__

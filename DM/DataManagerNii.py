@@ -1,13 +1,13 @@
-import copy
-import math
 import os
+
 #import cv2
 import numpy as np
 import SimpleITK as sitk
-import skimage.transform
-from DM.DataManager import DataManager
 from tqdm import tqdm
-from pathos.multiprocessing import ProcessingPool as Pool
+
+from DM.DataManager import DataManager
+
+# from pathos.multiprocessing import ProcessingPool as Pool
 
 
 
