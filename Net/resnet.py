@@ -90,7 +90,7 @@ def bottleneck(inputs, depth, depth_bottleneck, stride,
 # 定义生成ResNet V2的主函数
 
 
-def resnet_v2(inputs, blocks, num_classes=None, global_pool=True,
+def resnet_v2(inputs, blocks, num_classes, global_pool=True,
               include_root_block=True, reuse=None, scope=None):
     with tf.variable_scope(scope, 'resnet_v2', [inputs], reuse=reuse) as sc:
         end_points_collection = sc.original_name_scope + '_end_points'
@@ -107,12 +107,12 @@ def resnet_v2(inputs, blocks, num_classes=None, global_pool=True,
             if global_pool:
                 # Global average pooling.
                 net = tf.reduce_mean(net, [1, 2], name='pool5', keepdims=True)
-            if num_classes is not None:
-                net = slim.conv2d(net, num_classes, 1, activation_fn=None, normalizer_fn=None, scope='logits')
+
+            net = slim.flatten(net, scope='flatten')
+            net = slim.fully_connected(net, num_classes, activation_fn=None, normalizer_fn=None, scope='fc')
             # Convert end_points_collection into a dictionary of end_points.
             end_points = slim.utils.convert_collection_to_dict(end_points_collection)
-            if num_classes is not None:
-                end_points['predictions'] = slim.softmax(net, scope='predictions')
+            end_points['predictions'] = slim.softmax(net, scope='predictions')
             return net, end_points
 
 # 设计层数为50的ResNet V2
