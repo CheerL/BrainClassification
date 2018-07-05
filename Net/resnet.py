@@ -163,6 +163,13 @@ def resnet_v2_200(inputs, num_classes=None, global_pool=True, reuse=None, scope=
     return resnet_v2(inputs, blocks, num_classes, global_pool,
                      include_root_block=True, reuse=reuse, scope=scope)
 
+def resnet_v2_struct(inputs, num_classes=None, struct=[], global_pool=True, reuse=None, scope='resnet_v2_self'):
+    blocks = [
+        Block('block%d' % num, bottleneck, block_struct) for num, block_struct in enumerate(struct)
+    ]
+    return resnet_v2(inputs, blocks, num_classes, global_pool,
+                     include_root_block=True, reuse=reuse, scope=scope)
+
 
 # 评测函数
 def time_tensorflow_run(session, target, info_string):
@@ -189,10 +196,10 @@ def time_tensorflow_run(session, target, info_string):
 if __name__ == '__main__':
     print('start')
     batch_size = 32
-    height, width = 224, 224
-    inputs = tf.random_uniform((batch_size, height, width, 3))
+    height, width = 240, 240
+    inputs = tf.random_uniform((batch_size, height, width, 100))
     with slim.arg_scope(resnet_arg_scope(is_training=False)):
-        net, end_points = resnet_v2_152(inputs, 1000)  # 152层评测
+        net, end_points = resnet_v2_50(inputs, 2)  # 152层评测
 
     init = tf.global_variables_initializer()
     sess = tf.Session()
