@@ -46,18 +46,60 @@ class DataManagerNii(DataManager):
         numpy_data = dict()
         for img_dir in file_list:
             name = os.path.split(img_dir)[-1]
-
             img_dict = self.sitkImage[name]
             if name not in numpy_data.keys():
                 numpy_data[name] = dict()
+
+            numpy_data[name]['label'] = self.get_label(self.sitkGT[name])
+
+            trans_dim = self.left_dim + tuple([self.dim])
             for mod, img in img_dict.items():
-                numpy_data[name][mod] = sitk.GetArrayFromImage(
-                    img).astype(dtype=np.float32)
-            numpy_data[name]['label'] = self.getLabel(self.sitkGT[name])
+                numpy_data[name][mod] = self.get_resample_numpy_data(
+                    sitk.GetArrayFromImage(img).astype(dtype=np.float32).transpose(trans_dim)
+                )
+
         return numpy_data
 
-    def getLabel(self, data):
+    def get_resample_numpy_data(self, data):
+        width, height, _ = data.shape
+        if width == self.pic_size and height == self.pic_size:
+            resample = data
+        elif width <= self.pic_size and height <= self.pic_size:
+            pad_wl = (self.pic_size - width) // 2
+            pad_hu = (self.pic_size - height) // 2
+            pad_wr = self.pic_size - width - pad_wl
+            pad_hd = self.pic_size - height - pad_hu
+            resample = np.pad(data, ((pad_wl, pad_wr), (pad_hu, pad_hd), (0,0)), 'constant', constant_values=0)
+        elif width <= self.pic_size and height > self.pic_size:
+            pad_wl = (self.pic_size - width) // 2
+            pad_wr = self.pic_size - width - pad_wl
+
+            cut_hu = (height - self.pic_size) // 2
+            cut_hd = height - self.pic_size - cut_hu
+
+            resample = np.pad(data, ((pad_wl, pad_wr), (0, 0), (0,0)), 'constant', constant_values=0)
+            resample = resample[:, cut_hu:-cut_hd, :]
+        elif width > self.pic_size and height <= self.pic_size:
+            pad_hu = (self.pic_size - height) // 2
+            pad_hd = self.pic_size - height - pad_hu
+
+            cut_wl = (width - self.pic_size) // 2
+            cut_wr = width - self.pic_size - cut_wl
+
+            resample = np.pad(data, ((0, 0), (pad_hu, pad_hd), (0,0)), 'constant', constant_values=0)
+            resample = resample[cut_wl:-cut_wr, :, :]
+        else:
+            cut_wl = (width - self.pic_size) // 2
+            cut_hu = (height - self.pic_size) // 2
+            cut_wr = width - self.pic_size - cut_wl
+            cut_hd = height - self.pic_size - cut_hu
+
+            resample = data[cut_wl:-cut_wr, cut_hu:-cut_hd, :]
+        return resample
+
+    def get_label(self, data):
         numpy_data = sitk.GetArrayFromImage(data)
+        self.dim = numpy_data.shape.index(min(numpy_data.shape))
         label = numpy_data.sum(axis=self.left_dim).astype(np.bool).astype(np.float32)
         return label
 
@@ -84,6 +126,4 @@ class DataManagerNii(DataManager):
         pass
 
 if __name__ == '__main__':
-    dm = DataManagerNii('MICCAI_BraTS17_Data_Training/', '', '')
-    dm.createFileList(20)
-    dm.getTrainNumpyData()
+    dm = DataManagerNii('data', 'result', None)

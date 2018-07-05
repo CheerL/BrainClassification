@@ -35,20 +35,20 @@ class DataManager(object):
         self.numpyData = None
         self.meanIntensityTrain = None
         self.originalSizes = dict()
-
-        self.createFileList()
-
-        self._dim = 0
+        self.pic_size = 256
 
     @property
     def dim(self):
-        return self._dim
+        if not hasattr(self, '_dim'):
+            setattr(self, '_dim', 0)
+        return getattr(self, '_dim', 0)
 
     @dim.setter
     def dim(self, val):
-        self._dim = val
-        if hasattr(self, '_lazy_left_dim'):
-            delattr(self, '_lazy_left_dim')
+        if getattr(self, '_dim', 0) is not val:
+            setattr(self, '_dim', val)
+            if hasattr(self, '_lazy_left_dim'):
+                delattr(self, '_lazy_left_dim')
 
     @lazy_property
     def left_dim(self):
@@ -56,7 +56,7 @@ class DataManager(object):
         left_dim.remove(self.dim)
         return tuple(left_dim)
 
-    def createFileList(self, limit=None):
+    def createFileList(self, limit=0):
         ''' find all directories containing images and put there name in the fileList'''
         if self.fileList:
             self.fileList.clear()
@@ -64,9 +64,6 @@ class DataManager(object):
         stack = deque([self.srcFolder])
 
         while stack:
-            if limit is not None and len(self.fileList) >= limit:
-                break
-
             now_path = stack.pop()
             if os.path.isdir(now_path):
                 stack.extend([os.path.join(now_path, sub) for sub in os.listdir(now_path)])
@@ -77,6 +74,8 @@ class DataManager(object):
                         self.fileList.append(now_dir)
 
         self.checkFileList()
+        if limit > 0:
+            self.fileList = random.sample(self.fileList, k=limit)
 
     def checkFileList(self):
         for img_dir in self.fileList:
@@ -95,21 +94,25 @@ class DataManager(object):
         ''' load labels from label.nii'''
         raise NotImplementedError()
 
-    def loadTrainData(self):
+    def loadTrainData(self, file_list=None):
         ''' load training data'''
-        if not (self.trainList and self.testList):
-            self.splitData()
+        if file_list is None:
+            if not (self.trainList and self.trainList):
+                self.splitData()
+            file_list = self.trainList
 
-        self.loadImage(self.trainList)
-        self.loadGT(self.trainList)
+        self.loadImage(file_list)
+        self.loadGT(file_list)
 
-    def loadTestData(self):
+    def loadTestData(self, file_list=None):
         ''' load testing data or validation data'''
-        if not (self.trainList and self.testList):
-            self.splitData()
+        if file_list is None:
+            if not (self.trainList and self.testList):
+                self.splitData()
+            file_list = self.testList
 
-        self.loadImage(self.testList)
-        self.loadGT(self.testList)
+        self.loadImage(file_list)
+        self.loadGT(file_list)
 
     def splitData(self):
         total_num = len(self.fileList)
@@ -119,17 +122,16 @@ class DataManager(object):
         self.trainList = [path for i, path in enumerate(self.fileList) if i not in test_num_list]
 
     def getTrainNumpyData(self, file_list=None):
+        self.loadTrainData(file_list)
         if file_list is None:
             file_list = self.trainList
-
-        self.loadTrainData()
         self.numpyData = self.getNumpyData(file_list, sitk.sitkLinear)
 
     def getTestNumpyData(self, file_list=None):
+        self.loadTestData(file_list)
         if file_list is None:
             file_list = self.testList
 
-        self.loadTestData()
         self.numpyData = self.getNumpyData(file_list, sitk.sitkLinear)
 
     def getNumpyData(self, data, method):
