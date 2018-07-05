@@ -56,7 +56,7 @@ class DataManager(object):
         left_dim.remove(self.dim)
         return tuple(left_dim)
 
-    def createFileList(self):
+    def createFileList(self, limit=None):
         ''' find all directories containing images and put there name in the fileList'''
         if self.fileList:
             self.fileList.clear()
@@ -64,6 +64,9 @@ class DataManager(object):
         stack = deque([self.srcFolder])
 
         while stack:
+            if limit is not None and len(self.fileList) >= limit:
+                break
+
             now_path = stack.pop()
             if os.path.isdir(now_path):
                 stack.extend([os.path.join(now_path, sub) for sub in os.listdir(now_path)])
@@ -72,12 +75,13 @@ class DataManager(object):
                     now_dir = os.path.dirname(now_path)
                     if now_dir not in self.fileList:
                         self.fileList.append(now_dir)
+
         self.checkFileList()
 
     def checkFileList(self):
         for img_dir in self.fileList:
             img_str = ''.join(os.listdir(img_dir))
-            for mod in self.mods + ['seg']:
+            for mod in self.mods:
                 if mod not in img_str:
                     self.fileList.remove(img_dir)
                     break

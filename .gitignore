@@ -1,4 +1,6 @@
+.vscode/*
+.git/*
+log/*
 MICCAI_BraTS17_Data_Training/*
 */__pycache__/*
-log/*
 Net/*.jpg

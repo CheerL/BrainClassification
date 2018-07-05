@@ -1,6 +1,3 @@
-
-# ResNet V2
-# 载入模块、TensorFlow
 import collections
 import math
 import os
@@ -17,10 +14,12 @@ slim = tf.contrib.slim
 # 定义Block
 
 
-class Block(collections.namedtuple('Block', ['scope', 'unit_fn', 'args'])):
+class Block(collections.namedtuple('Block', ['scope', 'unit_fn', 'is_first', 'args'])):
     'A named tuple describing a ResNet block'
 
 # 定义降采样subsample方法
+
+
 def subsample(inputs, factor, scope=None):
     if factor == 1:
         return inputs
@@ -28,15 +27,20 @@ def subsample(inputs, factor, scope=None):
         return slim.max_pool2d(inputs, 1, stride=factor, scope=scope)
 
 # 定义堆叠Blocks函数，两层循环
+
+
 @slim.add_arg_scope
 def stack_blocks_dense(net, blocks, outputs_collections=None):
     for block in blocks:
         with tf.variable_scope(block.scope, 'block', [net]) as sc:
-            for i, unit in enumerate(block.args):
-                with tf.variable_scope('unit_%d' % (i + 1), values=[net]):
-                    unit_depth, unit_depth_bottleneck, unit_stride = unit
-                    net = block.unit_fn(net, depth=unit_depth, depth_bottleneck=unit_depth_bottleneck, stride=unit_stride)
-            net = slim.utils.collect_named_outputs(outputs_collections, sc.name, net)
+            unit_depth, unit_depth_bottleneck, unit_num = block.args
+            for i in range(unit_num):
+                with tf.variable_scope('unit_%d' % i, values=[net]):
+                    unit_stride = 2 if i is 0 and not block.is_first else 1
+                    net = block.unit_fn(
+                        net, depth=unit_depth, depth_bottleneck=unit_depth_bottleneck, stride=unit_stride)
+            net = slim.utils.collect_named_outputs(
+                outputs_collections, sc.name, net)
 
     return net
 
@@ -73,15 +77,20 @@ def bottleneck(inputs, depth, depth_bottleneck, stride,
                outputs_collections=None, scope=None):
     with tf.variable_scope(scope, 'bottleneck_v2', [inputs]) as sc:
         depth_in = slim.utils.last_dimension(inputs.get_shape(), min_rank=4)
-        preact = slim.batch_norm(inputs, activation_fn=tf.nn.relu, scope='preact')
+        preact = slim.batch_norm(
+            inputs, activation_fn=tf.nn.relu, scope='preact')
         if depth == depth_in:
             shortcut = subsample(preact, stride, 'shortcut')
         else:
-            shortcut = slim.conv2d(preact, depth, 1, stride=stride, activation_fn=None, normalizer_fn=None, scope='shortcut')
+            shortcut = slim.conv2d(preact, depth, 1, stride=stride,
+                                   activation_fn=None, normalizer_fn=None, scope='shortcut')
 
-        residual = slim.conv2d(preact, depth_bottleneck, 1, stride=1, scope='conv1')
-        residual = slim.conv2d(residual, depth_bottleneck, 3, stride=stride, padding='SAME', scope='conv2')
-        residual = slim.conv2d(residual, depth, 1, stride=1, activation_fn=None, normalizer_fn=None, scope='conv3')
+        residual = slim.conv2d(preact, depth_bottleneck,
+                               1, stride=1, scope='conv1')
+        residual = slim.conv2d(residual, depth_bottleneck,
+                               3, stride=stride, padding='SAME', scope='conv2')
+        residual = slim.conv2d(residual, depth, 1, stride=1,
+                               activation_fn=None, normalizer_fn=None, scope='conv3')
 
         output = tf.add(shortcut, residual)
 
@@ -99,19 +108,23 @@ def resnet_v2(inputs, blocks, num_classes, global_pool=True,
             net = inputs
             if include_root_block:
                 with slim.arg_scope([slim.conv2d], activation_fn=None, normalizer_fn=None):
-                    net = slim.conv2d(net, 64, 7, stride=2, padding='SAME', scope='conv1')
+                    net = slim.conv2d(net, 64, 7, stride=2,
+                                      padding='SAME', scope='conv1')
                 net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1')
             net = stack_blocks_dense(net, blocks)
 
-            net = slim.batch_norm(net, activation_fn=tf.nn.relu, scope='postnorm')
+            net = slim.batch_norm(
+                net, activation_fn=tf.nn.relu, scope='postnorm')
             if global_pool:
                 # Global average pooling.
                 net = tf.reduce_mean(net, [1, 2], name='pool5', keepdims=True)
 
             net = slim.flatten(net, scope='flatten')
-            net = slim.fully_connected(net, num_classes, activation_fn=None, normalizer_fn=None, scope='fc')
+            net = slim.fully_connected(
+                net, num_classes, activation_fn=None, normalizer_fn=None, scope='fc')
             # Convert end_points_collection into a dictionary of end_points.
-            end_points = slim.utils.convert_collection_to_dict(end_points_collection)
+            end_points = slim.utils.convert_collection_to_dict(
+                end_points_collection)
             end_points['predictions'] = slim.softmax(net, scope='predictions')
             return net, end_points
 
@@ -119,60 +132,65 @@ def resnet_v2(inputs, blocks, num_classes, global_pool=True,
 
 
 def resnet_v2_50(inputs, num_classes=None, global_pool=True, reuse=None, scope='resnet_v2_50'):
-    blocks = [
-        Block('block1', bottleneck, [(256, 64, 1)] * 2 + [(256, 64, 2)]),
-        Block('block2', bottleneck, [(512, 128, 1)] * 3 + [(512, 128, 2)]),
-        Block('block3', bottleneck, [(1024, 256, 1)] * 5 + [(1024, 256, 2)]),
-        Block('block4', bottleneck, [(2048, 512, 1)] * 3)]
-    return resnet_v2(inputs, blocks, num_classes, global_pool,
-                     include_root_block=True, reuse=reuse, scope=scope)
+    struct = [
+        (256, 64, 3),
+        (512, 128, 4),
+        (1024, 256, 6),
+        (2048, 512, 3)
+    ]
+    return resnet_v2_struct(inputs, num_classes, struct, global_pool, reuse, scope)
 
 # 设计101层的ResNet V2
 
 
 def resnet_v2_101(inputs, num_classes=None, global_pool=True, reuse=None, scope='resnet_v2_101'):
-    blocks = [
-        Block('block1', bottleneck, [(256, 64, 1)] * 2 + [(256, 64, 2)]),
-        Block('block2', bottleneck, [(512, 128, 1)] * 3 + [(512, 128, 2)]),
-        Block('block3', bottleneck, [(1024, 256, 1)] * 22 + [(1024, 256, 2)]),
-        Block('block4', bottleneck, [(2048, 512, 1)] * 3)]
-    return resnet_v2(inputs, blocks, num_classes, global_pool,
-                     include_root_block=True, reuse=reuse, scope=scope)
+    struct = [
+        (256, 64, 3),
+        (512, 128, 4),
+        (1024, 256, 23),
+        (2048, 512, 3)
+    ]
+    return resnet_v2_struct(inputs, num_classes, struct, global_pool, reuse, scope)
 
 # 设计152层的ResNet V2
 
 
 def resnet_v2_152(inputs, num_classes=None, global_pool=True, reuse=None, scope='resnet_v2_152'):
-    blocks = [
-        Block('block1', bottleneck, [(256, 64, 1)] * 2 + [(256, 64, 2)]),
-        Block('block2', bottleneck, [(512, 128, 1)] * 7 + [(512, 128, 2)]),
-        Block('block3', bottleneck, [(1024, 256, 1)] * 35 + [(1024, 256, 2)]),
-        Block('block4', bottleneck, [(2048, 512, 1)] * 3)]
-    return resnet_v2(inputs, blocks, num_classes, global_pool,
-                     include_root_block=True, reuse=reuse, scope=scope)
+    struct = [
+        (256, 64, 3),
+        (512, 128, 8),
+        (1024, 256, 36),
+        (2048, 512, 3)
+    ]
+    return resnet_v2_struct(inputs, num_classes, struct, global_pool, reuse, scope)
+
 
 # 设计200层的ResNet V2
-
-
 def resnet_v2_200(inputs, num_classes=None, global_pool=True, reuse=None, scope='resnet_v2_200'):
-    blocks = [
-        Block('block1', bottleneck, [(256, 64, 1)] * 2 + [(256, 64, 2)]),
-        Block('block2', bottleneck, [(512, 128, 1)] * 23 + [(512, 128, 2)]),
-        Block('block3', bottleneck, [(1024, 256, 1)] * 35 + [(1024, 256, 2)]),
-        Block('block4', bottleneck, [(2048, 512, 1)] * 3)]
-    return resnet_v2(inputs, blocks, num_classes, global_pool,
-                     include_root_block=True, reuse=reuse, scope=scope)
+    struct = [
+        (256, 64, 3),
+        (512, 128, 24),
+        (1024, 256, 36),
+        (2048, 512, 3)
+    ]
+    return resnet_v2_struct(inputs, num_classes, struct, global_pool, reuse, scope)
 
-def resnet_v2_struct(inputs, num_classes=None, struct=[], global_pool=True, reuse=None, scope='resnet_v2_self'):
+
+def resnet_v2_struct(inputs, num_classes=None, struct=[], global_pool=True, reuse=None, scope='resnet_v2'):
     blocks = [
-        Block('block%d' % num, bottleneck, block_struct) for num, block_struct in enumerate(struct)
+        Block(
+            'block_%d' % num,
+            bottleneck,
+            num is 0,
+            block_struct
+        ) for num, block_struct in enumerate(struct)
     ]
     return resnet_v2(inputs, blocks, num_classes, global_pool,
                      include_root_block=True, reuse=reuse, scope=scope)
 
 
 # 评测函数
-def time_tensorflow_run(session, target, info_string):
+def time_tensorflow_run(session, target, info_string, num_batches):
     num_steps_burn_in = 10
     total_duration = 0.0
     total_duration_squared = 0.0
@@ -196,15 +214,24 @@ def time_tensorflow_run(session, target, info_string):
 if __name__ == '__main__':
     print('start')
     batch_size = 32
-    height, width = 240, 240
+    height, width = 224, 224
+    num_classes = 2
+
     inputs = tf.random_uniform((batch_size, height, width, 100))
+
+    struct = [
+        (256, 64, 3),
+        (512, 128, 4),
+        (1024, 256, 6),
+        (2048, 512, 3)
+    ]
     with slim.arg_scope(resnet_arg_scope(is_training=False)):
-        net, end_points = resnet_v2_50(inputs, 2)  # 152层评测
+        # net, end_points = resnet_v2_struct(inputs, num_classes, struct)
+        net, end_points = resnet_v2_200(inputs, num_classes)
 
     init = tf.global_variables_initializer()
     sess = tf.Session()
     sess.run(init)
-    num_batches = 100
 
     writer = tf.summary.FileWriter('log/train', sess.graph)
-    time_tensorflow_run(sess, net, "Forward")
+    time_tensorflow_run(sess, net, "Forward", 100)
