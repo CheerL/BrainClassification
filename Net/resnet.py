@@ -3,190 +3,245 @@ import math
 import os
 import time
 from datetime import datetime
-
+import numpy as np
 import tensorflow as tf
-
+from tf.contrib import slim
+from config import SIZE, MOD_NUM
+from DM.tfrecord import generate_dataset
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-
-slim = tf.contrib.slim
-
 # 定义Block
-
-
 class Block(collections.namedtuple('Block', ['scope', 'unit_fn', 'is_first', 'args'])):
     'A named tuple describing a ResNet block'
 
-# 定义降采样subsample方法
+
+class ResNet(object):
+    def __init__(self):
+        self.graph = tf.Graph()
+        self.sess = tf.Session(graph=self.graph)
+        with self.graph.as_default():
+            self.img = tf.placeholder(tf.float32, [None, SIZE, SIZE, MOD_NUM], name='img')
+            self.label = tf.placeholder(tf.float32, [None, 1], name='label')
+            # self.inputs = tf.reshape(self.img, [-1, SIZE, SIZE, MOD_NUM])
+            self.inputs = self.img
+            self.predict = None
+            self.accuracy = None
+            self.loss = None
+            self.trainer = None
+            self.summary = None
+            self.writer = None
 
 
-def subsample(inputs, factor, scope=None):
-    if factor == 1:
-        return inputs
-    else:
-        return slim.max_pool2d(inputs, 1, stride=factor, scope=scope)
+            self.train_step = tf.get_variable('train_step', initializer=0, dtype=tf.int32, trainable=False)
+            self.epoch = tf.get_variable('epoch', initializer=-1, dtype=tf.int32, trainable=False)
 
-# 定义堆叠Blocks函数，两层循环
+    def train(self, img_set, batch_size=32, epoch_repeat_num=100, summary_interval=10):
+        with self.graph.as_default():
+            iterator, next_batch = generate_dataset(img_set, batch_size)
+            for epoch in range(epoch_repeat_num):
+                self.sess.run(iterator.initializer)
+                # self.logger.info('Start train epoch {}/{}'.format(
+                #     epoch + 1, utils.TRAIN_EPOCH_REPEAT_NUM))
+                while True:
+                    try:
+                        img, label = self.sess.run(next_batch)
+                        _, train_step = self.sess.run(
+                            [self.trainer, self.train_step],
+                            feed_dict={
+                                self.img: img,
+                                self.label: label
+                            })
 
+                        if train_step % summary_interval == 0:
+                            summary = self.sess.run(
+                                self.summary,
+                                feed_dict={
+                                    self.img: img,
+                                    self.label: label
+                                })
+                            self.writer.add_summary(summary, train_step)
+                            # self.logger.info('Save summary {}'.format(train_step))
+                    except tf.errors.OutOfRangeError:
+                        break
+            # self.logger.info('Training end')
 
-@slim.add_arg_scope
-def stack_blocks_dense(net, blocks, outputs_collections=None):
-    for block in blocks:
-        with tf.variable_scope(block.scope, 'block', [net]) as sc:
-            unit_depth, unit_depth_bottleneck, unit_num = block.args
-            for i in range(unit_num):
-                with tf.variable_scope('unit_%d' % i, values=[net]):
-                    unit_stride = 2 if i is 0 and not block.is_first else 1
-                    net = block.unit_fn(
-                        net, depth=unit_depth, depth_bottleneck=unit_depth_bottleneck, stride=unit_stride)
-            net = slim.utils.collect_named_outputs(
-                outputs_collections, sc.name, net)
+    def predict(self, img):
+        return self.sess.run(
+            self.predict,
+            feed_dict={
+                self.img: img
+            })
 
-    return net
+    def verificate(self, files):
+        with self.graph.as_default():
+            iterator, next_batch = generate_dataset(files, 100, True)
+            self.sess.run(iterator.initializer)
+            while True:
+                try:
+                    img, label = self.sess.run(next_batch)
+                    accuracy, loss = self.sess.run(
+                        [self.accuracy, self.loss],
+                        feed_dict={
+                            self.img: img,
+                            self.label: label
+                        })
+                    # self.logger.info('accuracy: {}, loss: {}'.format(accuracy, loss))
+                except tf.errors.OutOfRangeError:
+                    break
+            # self.logger.info('Verification end')
+            return accuracy, loss
 
-# 创建ResNet通用arg_scope，定义函数默认参数值
-
-
-def resnet_arg_scope(is_training=True,
-                     weight_decay=0.0001,
-                     batch_norm_decay=0.997,
-                     batch_norm_epsilon=1e-5,
-                     batch_norm_scale=True):
-    batch_norm_params = {
-        'is_training': is_training,
-        'decay': batch_norm_decay,
-        'epsilon': batch_norm_epsilon,
-        'scale': batch_norm_scale,
-        'updates_collections': tf.GraphKeys.UPDATE_OPS,
-    }
-
-    with slim.arg_scope([slim.conv2d],
-                        weights_regularizer=slim.l2_regularizer(weight_decay),
-                        weights_initializer=slim.variance_scaling_initializer(),
-                        activation_fn=tf.nn.relu,
-                        normalizer_fn=slim.batch_norm,
-                        normalizer_params=batch_norm_params):
-        with slim.arg_scope([slim.batch_norm], **batch_norm_params):
-            with slim.arg_scope([slim.max_pool2d], padding='SAME') as arg_sc:
-                return arg_sc
-
-
-@slim.add_arg_scope
-# 定义核心bottleneck残差学习单元
-def bottleneck(inputs, depth, depth_bottleneck, stride,
-               outputs_collections=None, scope=None):
-    with tf.variable_scope(scope, 'bottleneck_v2', [inputs]) as sc:
-        depth_in = slim.utils.last_dimension(inputs.get_shape(), min_rank=4)
-        preact = slim.batch_norm(
-            inputs, activation_fn=tf.nn.relu, scope='preact')
-        if depth == depth_in:
-            shortcut = subsample(preact, stride, 'shortcut')
+    def subsample(self, inputs, factor, scope=None):
+        if factor == 1:
+            return inputs
         else:
-            shortcut = slim.conv2d(preact, depth, 1, stride=stride,
-                                   activation_fn=None, normalizer_fn=None, scope='shortcut')
+            return slim.max_pool2d(inputs, 1, stride=factor, scope=scope)
 
-        residual = slim.conv2d(preact, depth_bottleneck,
-                               1, stride=1, scope='conv1')
-        residual = slim.conv2d(residual, depth_bottleneck,
-                               3, stride=stride, padding='SAME', scope='conv2')
-        residual = slim.conv2d(residual, depth, 1, stride=1,
-                               activation_fn=None, normalizer_fn=None, scope='conv3')
+    def resnet_arg_scope(self, is_training=True,
+                        weight_decay=0.0001,
+                        batch_norm_decay=0.997,
+                        batch_norm_epsilon=1e-5,
+                        batch_norm_scale=True):
+        batch_norm_params = {
+            'is_training': is_training,
+            'decay': batch_norm_decay,
+            'epsilon': batch_norm_epsilon,
+            'scale': batch_norm_scale,
+            'updates_collections': tf.GraphKeys.UPDATE_OPS,
+        }
 
-        output = tf.add(shortcut, residual)
+        with slim.arg_scope([slim.conv2d],
+                            weights_regularizer=slim.l2_regularizer(weight_decay),
+                            weights_initializer=slim.variance_scaling_initializer(),
+                            activation_fn=tf.nn.relu,
+                            normalizer_fn=slim.batch_norm,
+                            normalizer_params=batch_norm_params):
+            with slim.arg_scope([slim.batch_norm], **batch_norm_params):
+                with slim.arg_scope([slim.max_pool2d], padding='SAME') as arg_sc:
+                    return arg_sc
 
-        return slim.utils.collect_named_outputs(outputs_collections, sc.name, output)
 
-# 定义生成ResNet V2的主函数
+    @slim.add_arg_scope
+    def stack_blocks_dense(self, net, blocks, outputs_collections=None):
+        for block in blocks:
+            with tf.variable_scope(block.scope, 'block', [net]) as sc:
+                unit_depth, unit_depth_bottleneck, unit_num = block.args
+                for i in range(unit_num):
+                    with tf.variable_scope('unit_%d' % i, values=[net]):
+                        unit_stride = 2 if i is 0 and not block.is_first else 1
+                        net = block.unit_fn(
+                            net, depth=unit_depth, depth_bottleneck=unit_depth_bottleneck, stride=unit_stride)
+                net = slim.utils.collect_named_outputs(
+                    outputs_collections, sc.name, net)
+        return net
 
 
-def resnet_v2(inputs, blocks, num_classes, global_pool=True,
-              include_root_block=True, reuse=None, scope=None):
-    with tf.variable_scope(scope, 'resnet_v2', [inputs], reuse=reuse) as sc:
-        end_points_collection = sc.original_name_scope + '_end_points'
-        with slim.arg_scope([slim.conv2d, bottleneck, stack_blocks_dense],
-                            outputs_collections=end_points_collection):
-            net = inputs
-            if include_root_block:
+    @slim.add_arg_scope
+    # 定义核心bottleneck残差学习单元
+    def bottleneck(self, inputs, depth, depth_bottleneck, stride,
+                outputs_collections=None, scope=None):
+        with tf.variable_scope(scope, 'bottleneck_v2', [inputs]) as sc:
+            depth_in = slim.utils.last_dimension(inputs.get_shape(), min_rank=4)
+            preact = slim.batch_norm(
+                inputs, activation_fn=tf.nn.relu, scope='preact')
+            if depth == depth_in:
+                shortcut = self.subsample(preact, stride, 'shortcut')
+            else:
+                shortcut = slim.conv2d(preact, depth, 1, stride=stride,
+                                    activation_fn=None, normalizer_fn=None, scope='shortcut')
+
+            residual = slim.conv2d(preact, depth_bottleneck,
+                                1, stride=1, scope='conv1')
+            residual = slim.conv2d(residual, depth_bottleneck,
+                                3, stride=stride, padding='SAME', scope='conv2')
+            residual = slim.conv2d(residual, depth, 1, stride=1,
+                                activation_fn=None, normalizer_fn=None, scope='conv3')
+
+            output = tf.add(shortcut, residual)
+
+            return slim.utils.collect_named_outputs(outputs_collections, sc.name, output)
+
+    # 定义生成ResNet V2的主函数
+
+
+    def resnet_v2(self, blocks, class_num, reuse=None, scope=None):
+        with tf.variable_scope(scope, 'resnet_v2', [self.inputs], reuse=reuse) as sc:
+            with slim.arg_scope([slim.conv2d, self.bottleneck, self.stack_blocks_dense]):
                 with slim.arg_scope([slim.conv2d], activation_fn=None, normalizer_fn=None):
-                    net = slim.conv2d(net, 64, 7, stride=2,
-                                      padding='SAME', scope='conv1')
-                net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1')
-            net = stack_blocks_dense(net, blocks)
+                    net = slim.conv2d(self.inputs, 64, 7, stride=2,
+                                    padding='SAME', scope='preconv')
+                net = slim.max_pool2d(net, [3, 3], stride=2, scope='prepool')
+                net = self.stack_blocks_dense(net, blocks)
+                net = slim.batch_norm(net, activation_fn=tf.nn.relu, scope='postbn')
+                net = tf.reduce_mean(net, [1, 2], name='postpool', keepdims=True)
+                net = slim.flatten(net, scope='flatten')
+                net = slim.fully_connected(net, class_num, activation_fn=None, normalizer_fn=None, scope='fc')
+                # Convert end_points_collection into a dictionary of end_points.
+                net = slim.softmax(net, scope='predict')
+                self.predict = net
+                self.accuracy = tf.reduce_mean(tf.cast(self.predict - self.label), tf.float32)
+                self.loss = tf.reduce_mean(tf.square(self.predict - self.label))
 
-            net = slim.batch_norm(
-                net, activation_fn=tf.nn.relu, scope='postnorm')
-            if global_pool:
-                # Global average pooling.
-                net = tf.reduce_mean(net, [1, 2], name='pool5', keepdims=True)
+                tf.summary.scalar(self.accuracy)
+                tf.summary.scalar(self.loss)
 
-            net = slim.flatten(net, scope='flatten')
-            net = slim.fully_connected(
-                net, num_classes, activation_fn=None, normalizer_fn=None, scope='fc')
-            # Convert end_points_collection into a dictionary of end_points.
-            end_points = slim.utils.convert_collection_to_dict(
-                end_points_collection)
-            end_points['predictions'] = slim.softmax(net, scope='predictions')
-            return net, end_points
-
-# 设计层数为50的ResNet V2
-
-
-def resnet_v2_50(inputs, num_classes=None, global_pool=True, reuse=None, scope='resnet_v2_50'):
-    struct = [
-        (256, 64, 3),
-        (512, 128, 4),
-        (1024, 256, 6),
-        (2048, 512, 3)
-    ]
-    return resnet_v2_struct(inputs, num_classes, struct, global_pool, reuse, scope)
-
-# 设计101层的ResNet V2
+                self.summary = tf.summary.merge(tf.get_collection(tf.GraphKeys.SUMMARIES))
+                self.writer = tf.summary.FileWriter('log/train')
+                self.trainer = tf.train.AdadeltaOptimizer().minimize(self.loss)
+                return net
 
 
-def resnet_v2_101(inputs, num_classes=None, global_pool=True, reuse=None, scope='resnet_v2_101'):
-    struct = [
-        (256, 64, 3),
-        (512, 128, 4),
-        (1024, 256, 23),
-        (2048, 512, 3)
-    ]
-    return resnet_v2_struct(inputs, num_classes, struct, global_pool, reuse, scope)
+    def resnet_v2_struct(self, class_num, struct=[], reuse=None, scope='resnet_v2'):
+        blocks = [
+            Block(
+                'block_%d' % num,
+                self.bottleneck,
+                num is 0,
+                block_struct
+            ) for num, block_struct in enumerate(struct)
+        ]
+        return self.resnet_v2(blocks, class_num, reuse=reuse, scope=scope)
 
-# 设计152层的ResNet V2
-
-
-def resnet_v2_152(inputs, num_classes=None, global_pool=True, reuse=None, scope='resnet_v2_152'):
-    struct = [
-        (256, 64, 3),
-        (512, 128, 8),
-        (1024, 256, 36),
-        (2048, 512, 3)
-    ]
-    return resnet_v2_struct(inputs, num_classes, struct, global_pool, reuse, scope)
-
-
-# 设计200层的ResNet V2
-def resnet_v2_200(inputs, num_classes=None, global_pool=True, reuse=None, scope='resnet_v2_200'):
-    struct = [
-        (256, 64, 3),
-        (512, 128, 24),
-        (1024, 256, 36),
-        (2048, 512, 3)
-    ]
-    return resnet_v2_struct(inputs, num_classes, struct, global_pool, reuse, scope)
+    def resnet_v2_50(self, class_num, reuse=None, scope='resnet_v2_50'):
+        struct = [
+            (256, 64, 3),
+            (512, 128, 4),
+            (1024, 256, 6),
+            (2048, 512, 3)
+        ]
+        return self.resnet_v2_struct(class_num, struct, reuse, scope)
 
 
-def resnet_v2_struct(inputs, num_classes=None, struct=[], global_pool=True, reuse=None, scope='resnet_v2'):
-    blocks = [
-        Block(
-            'block_%d' % num,
-            bottleneck,
-            num is 0,
-            block_struct
-        ) for num, block_struct in enumerate(struct)
-    ]
-    return resnet_v2(inputs, blocks, num_classes, global_pool,
-                     include_root_block=True, reuse=reuse, scope=scope)
+
+    def resnet_v2_101(self, class_num, reuse=None, scope='resnet_v2_101'):
+        struct = [
+            (256, 64, 3),
+            (512, 128, 4),
+            (1024, 256, 23),
+            (2048, 512, 3)
+        ]
+        return self.resnet_v2_struct(class_num, struct, reuse, scope)
+
+
+
+    def resnet_v2_152(self, class_num, reuse=None, scope='resnet_v2_152'):
+        struct = [
+            (256, 64, 3),
+            (512, 128, 8),
+            (1024, 256, 36),
+            (2048, 512, 3)
+        ]
+        return self.resnet_v2_struct(class_num, struct, reuse, scope)
+
+
+    def resnet_v2_200(self, class_num, reuse=None, scope='resnet_v2_200'):
+        struct = [
+            (256, 64, 3),
+            (512, 128, 24),
+            (1024, 256, 36),
+            (2048, 512, 3)
+        ]
+        return self.resnet_v2_struct(class_num, struct, reuse, scope)
 
 
 # 评测函数
@@ -212,26 +267,4 @@ def time_tensorflow_run(session, target, info_string, num_batches):
 
 
 if __name__ == '__main__':
-    print('start')
-    batch_size = 32
-    height, width = 224, 224
-    num_classes = 2
-
-    inputs = tf.random_uniform((batch_size, height, width, 100))
-
-    struct = [
-        (256, 64, 3),
-        (512, 128, 4),
-        (1024, 256, 6),
-        (2048, 512, 3)
-    ]
-    with slim.arg_scope(resnet_arg_scope(is_training=False)):
-        # net, end_points = resnet_v2_struct(inputs, num_classes, struct)
-        net, end_points = resnet_v2_200(inputs, num_classes)
-
-    init = tf.global_variables_initializer()
-    sess = tf.Session()
-    sess.run(init)
-
-    writer = tf.summary.FileWriter('log/train', sess.graph)
-    time_tensorflow_run(sess, net, "Forward", 100)
+    pass

@@ -7,7 +7,6 @@ import numpy as np
 import SimpleITK as sitk
 from tqdm import tqdm
 
-
 def lazy_property(func):
     attr_name = "_lazy_" + func.__name__
 
@@ -137,22 +136,3 @@ class DataManager(object):
     def getNumpyData(self, data, method):
         ''' load numpy data from sitk data'''
         raise NotImplementedError()
-
-    def writeResultsFromNumpyLabel(self, result, key):
-        ''' save the segmentation results to the result directory'''
-        result = np.transpose(result, [2, 1, 0])
-
-        if self.probabilityMap:
-            result = result * 255
-        else:
-            result = result>0.5
-            result = result.astype(np.uint8)
-        toWrite = sitk.GetImageFromArray(result)
-
-        toWrite = sitk.Cast(toWrite, sitk.sitkUInt8)
-
-        writer = sitk.ImageFileWriter()
-        filename, ext = os.path.splitext(key)
-        # #print join(self.resultsDir, filename + '_result' + ext)
-        writer.SetFileName(os.path.join(self.resultsDir, filename + '_result.nii'))
-        writer.Execute(toWrite)
