@@ -11,8 +11,8 @@ class DataManager(object):
     def __init__(self, srcFolder=DATA_PATH, resultsDir=RESULT_PATH, parameters=None, mods=MODS):
         self.mods = mods
         self.params = parameters
-        self.srcFolder = srcFolder.strip('/').strip('\\').strip()
-        self.resultsDir = resultsDir.strip('/').strip('\\').strip()
+        self.srcFolder = srcFolder
+        self.resultsDir = resultsDir
         self.fileList = list()
         self.trainList = list()
         self.testList = list()
@@ -99,6 +99,9 @@ class DataManager(object):
         self.loadGT(file_list)
 
     def splitData(self):
+        if not self.fileList:
+            self.createFileList()
+
         total_num = len(self.fileList)
         test_num = int(total_num * self.test_rate)
         test_num_list = random.sample(range(total_num), test_num)

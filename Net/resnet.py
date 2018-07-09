@@ -1,15 +1,12 @@
 import collections
-import math
 import os
-import time
-from datetime import datetime
 
 import numpy as np
 import tensorflow as tf
 
 from config import (BATCH_SIZE, CLASS_NUM, EPOCH_REPEAT_NUM, LOG_PATH, MOD_NUM,
                     MODEL_PATH, SIZE, SUMMARY_INTERVAL, VER_BATCH_SIZE)
-from tf.contrib import slim
+from tensorflow.contrib import slim
 from utils.logger import Logger
 from utils.tfrecord import generate_dataset
 
@@ -24,6 +21,7 @@ class Block(collections.namedtuple('Block', ['scope', 'unit_fn', 'is_first', 'ar
 
 class ResNet(object):
     def __init__(self, class_num=CLASS_NUM, res_type=None, struct=None):
+        self.__loaded = False
         self.logger = Logger('resnet')
         self.class_num = class_num
         self.graph = tf.Graph()
@@ -31,7 +29,7 @@ class ResNet(object):
         with self.graph.as_default():
             self.img = tf.placeholder(
                 tf.float32, [None, SIZE, SIZE, MOD_NUM], name='img')
-            self.label = tf.placeholder(tf.float32, [None, 1], name='label')
+            self.label = tf.placeholder(tf.float32, [None, CLASS_NUM], name='label')
             # self.inputs = tf.reshape(self.img, [-1, SIZE, SIZE, MOD_NUM])
             self.inputs = self.img
             self.prediction = None
@@ -40,12 +38,10 @@ class ResNet(object):
             self.trainer = None
             self.summary = None
             self.writer = None
-            self.saver = tf.train.Saver()
+            self.saver = None
 
             self.train_step = tf.get_variable(
                 'train_step', initializer=0, dtype=tf.int32, trainable=False)
-            self.epoch = tf.get_variable(
-                'epoch', initializer=-1, dtype=tf.int32, trainable=False)
 
             if res_type == 'DIY' and struct:
                 self.resnet_v2_struct(self.class_num, struct)
@@ -60,10 +56,15 @@ class ResNet(object):
             else:
                 self.resnet_v2_50(self.class_num)
 
+    def start(self):
+        if not self.__loaded:
+            self.sess.run(tf.global_variables_initializer())
+
     def train(self, file_list, batch_size=BATCH_SIZE,
               epoch_repeat_num=EPOCH_REPEAT_NUM,
               summary_interval=SUMMARY_INTERVAL):
         with self.graph.as_default():
+            self.start()
             iterator, next_batch = generate_dataset(file_list, batch_size)
             for epoch in range(epoch_repeat_num):
                 self.sess.run(iterator.initializer)
@@ -102,6 +103,7 @@ class ResNet(object):
 
     def verify(self, file_list, batch_size=VER_BATCH_SIZE):
         with self.graph.as_default():
+            self.start()
             iterator, next_batch = generate_dataset(
                 file_list, batch_size, True)
             self.sess.run(iterator.initializer)
@@ -128,6 +130,7 @@ class ResNet(object):
     def load(self, model_name):
         model_path = os.path.join(MODEL_PATH, model_name)
         self.saver.restore(self.sess, model_path)
+        self.__loaded = True
 
     def subsample(self, inputs, factor, scope=None):
         if factor == 1:
@@ -214,24 +217,24 @@ class ResNet(object):
                 net = tf.reduce_mean(
                     net, [1, 2], name='postpool', keepdims=True)
                 net = slim.flatten(net, scope='flatten')
-                net = slim.fully_connected(
+                logits = net = slim.fully_connected(
                     net, class_num, activation_fn=None, normalizer_fn=None, scope='fc')
                 # Convert end_points_collection into a dictionary of end_points.
-                net = slim.softmax(net, scope='prediction')
-                self.prediction = net
-                self.accuracy = tf.reduce_mean(
-                    tf.cast(self.prediction - self.label), tf.float32)
-                self.loss = tf.reduce_mean(
-                    tf.square(self.prediction - self.label))
+                self.prediction = slim.softmax(net, scope='prediction')
 
-                tf.summary.scalar(self.accuracy)
-                tf.summary.scalar(self.loss)
+                correct_prediction = tf.equal(tf.argmax(self.prediction, 1), tf.argmax(self.label, 1))
+                self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+                self.loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self.label)
+
+                tf.summary.scalar('accuracy', self.accuracy)
+                tf.summary.scalar('loss', self.loss)
 
                 self.summary = tf.summary.merge(
                     tf.get_collection(tf.GraphKeys.SUMMARIES))
-                self.writer = tf.summary.FileWriter(LOG_PATH)
-                self.trainer = tf.train.AdadeltaOptimizer().minimize(self.loss)
+                self.writer = tf.summary.FileWriter(LOG_PATH, self.graph)
+                self.trainer = tf.train.AdadeltaOptimizer().minimize(self.loss, global_step=self.train_step)
                 self.logger.info('Build Net OK')
+                self.saver = tf.train.Saver()
                 return net
 
     def resnet_v2_struct(self, class_num, struct=[], reuse=None, scope='resnet_v2'):

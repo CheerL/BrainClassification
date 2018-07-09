@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from config import MOD_NUM, SIZE
+from config import MOD_NUM, SIZE, CLASS_NUM
 
 
 def generate_example(img, label):
@@ -8,7 +8,7 @@ def generate_example(img, label):
         features=tf.train.Features(
             feature={
                 'img': tf.train.Feature(bytes_list=tf.train.BytesList(value=[img.tostring()])),
-                'label': tf.train.Feature(float_list=tf.train.FloatList(value=[label]))
+                'label': tf.train.Feature(bytes_list=tf.train.BytesList(value=[label.tostring()]))
             }
         )
     )
@@ -27,12 +27,11 @@ def generate_dataset(files_list, batch_size, verificate=False):
         dataset = dataset.batch(10 * SIZE * SIZE)
     iterator = dataset.make_initializable_iterator()
     next_batch = iterator.get_next()
-
     example = tf.parse_example(
         next_batch,
         features={
             'img': tf.FixedLenFeature([], tf.string),
-            'label': tf.FixedLenFeature([], tf.float32),
+            'label': tf.FixedLenFeature([], tf.string),
         }
     )
     img = tf.cast(
@@ -41,7 +40,8 @@ def generate_dataset(files_list, batch_size, verificate=False):
         tf.float32
     )
     label = tf.cast(
-        tf.reshape(example['label'], [-1, 1]),
+        tf.reshape(tf.decode_raw(
+            example['label'], tf.float32), (-1, CLASS_NUM)),
         tf.float32
     )
     return iterator, [img, label]

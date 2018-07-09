@@ -77,6 +77,7 @@ class DataManagerNii(DataManager):
 
     def getNumpyData(self, file_list=None):
         numpy_data = dict()
+
         if file_list is None:
             file_list = self.fileList
 
@@ -88,16 +89,16 @@ class DataManagerNii(DataManager):
 
             numpy_data[name]['label'] = self.get_label(self.sitkGT[name])
             for mod, img in img_dict.items():
-                numpy_data[name][mod] = sitk.GetArrayFromImage(
-                    img).astype(dtype=np.float32)
+                numpy_data[name][mod] = sitk.GetArrayFromImage(img).astype(np.float32)
 
         return numpy_data
 
     def get_label(self, data):
         numpy_data = sitk.GetArrayFromImage(data)
         # self.dim = numpy_data.shape.index(min(numpy_data.shape))
-        label = numpy_data.sum(axis=self.left_dim).astype(
-            np.bool).astype(dtype=np.float32)
+        ture_label = numpy_data.sum(axis=self.left_dim).astype(np.bool).astype(np.float32)
+        false_label = 1 - ture_label
+        label = np.stack([ture_label, false_label], axis=1)
         return label
 
     def write_tfrecord(self):

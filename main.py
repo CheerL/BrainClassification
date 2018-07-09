@@ -9,7 +9,7 @@ def transfer_to_tfr(dm=None):
     dm.createFileList()
     dm.loadImage()
     dm.loadGT()
-    dm.getNumpyData()
+    dm.numpyData = dm.getNumpyData()
     dm.write_tfrecord()
 
 
@@ -40,8 +40,8 @@ def verify(dm, net):
 
 def main():
     dm = DMN()
+    # transfer_to_tfr(dm)
     net = ResNet(res_type=50)
-    transfer_to_tfr(dm)
     train(dm, net)
 
 
