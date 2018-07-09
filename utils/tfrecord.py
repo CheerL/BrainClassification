@@ -1,5 +1,6 @@
 import tensorflow as tf
-from config import SIZE, MOD_NUM
+
+from config import MOD_NUM, SIZE
 
 
 def generate_example(img, label):
@@ -7,7 +8,7 @@ def generate_example(img, label):
         features=tf.train.Features(
             feature={
                 'img': tf.train.Feature(bytes_list=tf.train.BytesList(value=[img.tostring()])),
-                'label': tf.train.Feature(int64_list=tf.train.FloatList(value=[label]))
+                'label': tf.train.Feature(float_list=tf.train.FloatList(value=[label]))
             }
         )
     )
@@ -18,7 +19,7 @@ def generate_writer(path):
 
 
 def generate_dataset(files_list, batch_size, verificate=False):
-    dataset = tf.contrib.data.TFRecordDataset(files_list)
+    dataset = tf.data.TFRecordDataset(files_list)
     dataset = dataset.shuffle(100 * SIZE * SIZE)
     if not verificate:
         dataset = dataset.batch(batch_size)
@@ -35,7 +36,8 @@ def generate_dataset(files_list, batch_size, verificate=False):
         }
     )
     img = tf.cast(
-        tf.reshape(tf.decode_raw(example['img'], tf.float32), (-1, SIZE, SIZE, MOD_NUM)),
+        tf.reshape(tf.decode_raw(
+            example['img'], tf.float32), (-1, SIZE, SIZE, MOD_NUM)),
         tf.float32
     )
     label = tf.cast(

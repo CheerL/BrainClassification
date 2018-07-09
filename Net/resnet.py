@@ -3,45 +3,72 @@ import math
 import os
 import time
 from datetime import datetime
+
 import numpy as np
 import tensorflow as tf
+
+from config import (BATCH_SIZE, CLASS_NUM, EPOCH_REPEAT_NUM, LOG_PATH, MOD_NUM,
+                    MODEL_PATH, SIZE, SUMMARY_INTERVAL, VER_BATCH_SIZE)
 from tf.contrib import slim
-from config import SIZE, MOD_NUM
-from DM.tfrecord import generate_dataset
+from utils.logger import Logger
+from utils.tfrecord import generate_dataset
+
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # 定义Block
+
+
 class Block(collections.namedtuple('Block', ['scope', 'unit_fn', 'is_first', 'args'])):
     'A named tuple describing a ResNet block'
 
 
 class ResNet(object):
-    def __init__(self):
+    def __init__(self, class_num=CLASS_NUM, res_type=None, struct=None):
+        self.logger = Logger('resnet')
+        self.class_num = class_num
         self.graph = tf.Graph()
         self.sess = tf.Session(graph=self.graph)
         with self.graph.as_default():
-            self.img = tf.placeholder(tf.float32, [None, SIZE, SIZE, MOD_NUM], name='img')
+            self.img = tf.placeholder(
+                tf.float32, [None, SIZE, SIZE, MOD_NUM], name='img')
             self.label = tf.placeholder(tf.float32, [None, 1], name='label')
             # self.inputs = tf.reshape(self.img, [-1, SIZE, SIZE, MOD_NUM])
             self.inputs = self.img
-            self.predict = None
+            self.prediction = None
             self.accuracy = None
             self.loss = None
             self.trainer = None
             self.summary = None
             self.writer = None
+            self.saver = tf.train.Saver()
 
+            self.train_step = tf.get_variable(
+                'train_step', initializer=0, dtype=tf.int32, trainable=False)
+            self.epoch = tf.get_variable(
+                'epoch', initializer=-1, dtype=tf.int32, trainable=False)
 
-            self.train_step = tf.get_variable('train_step', initializer=0, dtype=tf.int32, trainable=False)
-            self.epoch = tf.get_variable('epoch', initializer=-1, dtype=tf.int32, trainable=False)
+            if res_type == 'DIY' and struct:
+                self.resnet_v2_struct(self.class_num, struct)
+            elif res_type is 50:
+                self.resnet_v2_50(self.class_num)
+            elif res_type is 101:
+                self.resnet_v2_101(self.class_num)
+            elif res_type is 152:
+                self.resnet_v2_152(self.class_num)
+            elif res_type is 200:
+                self.resnet_v2_200(self.class_num)
+            else:
+                self.resnet_v2_50(self.class_num)
 
-    def train(self, img_set, batch_size=32, epoch_repeat_num=100, summary_interval=10):
+    def train(self, file_list, batch_size=BATCH_SIZE,
+              epoch_repeat_num=EPOCH_REPEAT_NUM,
+              summary_interval=SUMMARY_INTERVAL):
         with self.graph.as_default():
-            iterator, next_batch = generate_dataset(img_set, batch_size)
+            iterator, next_batch = generate_dataset(file_list, batch_size)
             for epoch in range(epoch_repeat_num):
                 self.sess.run(iterator.initializer)
-                # self.logger.info('Start train epoch {}/{}'.format(
-                #     epoch + 1, utils.TRAIN_EPOCH_REPEAT_NUM))
+                self.logger.info('Start train epoch {}/{}'.format(
+                    epoch + 1, epoch_repeat_num))
                 while True:
                     try:
                         img, label = self.sess.run(next_batch)
@@ -53,28 +80,30 @@ class ResNet(object):
                             })
 
                         if train_step % summary_interval == 0:
-                            summary = self.sess.run(
-                                self.summary,
+                            summary, accuracy, loss = self.sess.run(
+                                [self.summary, self.accuracy, self.loss],
                                 feed_dict={
                                     self.img: img,
                                     self.label: label
                                 })
                             self.writer.add_summary(summary, train_step)
-                            # self.logger.info('Save summary {}'.format(train_step))
+                            self.logger.info('Save summary {}, accuracy: {}, loss {}'.format(
+                                train_step, accuracy, loss))
                     except tf.errors.OutOfRangeError:
                         break
-            # self.logger.info('Training end')
+            self.logger.info('Train end')
 
     def predict(self, img):
         return self.sess.run(
-            self.predict,
+            self.prediction,
             feed_dict={
                 self.img: img
             })
 
-    def verificate(self, files):
+    def verify(self, file_list, batch_size=VER_BATCH_SIZE):
         with self.graph.as_default():
-            iterator, next_batch = generate_dataset(files, 100, True)
+            iterator, next_batch = generate_dataset(
+                file_list, batch_size, True)
             self.sess.run(iterator.initializer)
             while True:
                 try:
@@ -85,11 +114,20 @@ class ResNet(object):
                             self.img: img,
                             self.label: label
                         })
-                    # self.logger.info('accuracy: {}, loss: {}'.format(accuracy, loss))
+                    self.logger.info(
+                        'accuracy: {}, loss: {}'.format(accuracy, loss))
                 except tf.errors.OutOfRangeError:
                     break
-            # self.logger.info('Verification end')
+            self.logger.info('Verify end')
             return accuracy, loss
+
+    def save(self, model_name):
+        model_path = os.path.join(MODEL_PATH, model_name)
+        self.saver.save(self.sess, model_path)
+
+    def load(self, model_name):
+        model_path = os.path.join(MODEL_PATH, model_name)
+        self.saver.restore(self.sess, model_path)
 
     def subsample(self, inputs, factor, scope=None):
         if factor == 1:
@@ -98,10 +136,10 @@ class ResNet(object):
             return slim.max_pool2d(inputs, 1, stride=factor, scope=scope)
 
     def resnet_arg_scope(self, is_training=True,
-                        weight_decay=0.0001,
-                        batch_norm_decay=0.997,
-                        batch_norm_epsilon=1e-5,
-                        batch_norm_scale=True):
+                         weight_decay=0.0001,
+                         batch_norm_decay=0.997,
+                         batch_norm_epsilon=1e-5,
+                         batch_norm_scale=True):
         batch_norm_params = {
             'is_training': is_training,
             'decay': batch_norm_decay,
@@ -111,7 +149,8 @@ class ResNet(object):
         }
 
         with slim.arg_scope([slim.conv2d],
-                            weights_regularizer=slim.l2_regularizer(weight_decay),
+                            weights_regularizer=slim.l2_regularizer(
+                                weight_decay),
                             weights_initializer=slim.variance_scaling_initializer(),
                             activation_fn=tf.nn.relu,
                             normalizer_fn=slim.batch_norm,
@@ -119,7 +158,6 @@ class ResNet(object):
             with slim.arg_scope([slim.batch_norm], **batch_norm_params):
                 with slim.arg_scope([slim.max_pool2d], padding='SAME') as arg_sc:
                     return arg_sc
-
 
     @slim.add_arg_scope
     def stack_blocks_dense(self, net, blocks, outputs_collections=None):
@@ -129,33 +167,33 @@ class ResNet(object):
                 for i in range(unit_num):
                     with tf.variable_scope('unit_%d' % i, values=[net]):
                         unit_stride = 2 if i is 0 and not block.is_first else 1
-                        net = block.unit_fn(
-                            net, depth=unit_depth, depth_bottleneck=unit_depth_bottleneck, stride=unit_stride)
+                        net = block.unit_fn(net, depth=unit_depth, stride=unit_stride,
+                                            depth_bottleneck=unit_depth_bottleneck)
                 net = slim.utils.collect_named_outputs(
                     outputs_collections, sc.name, net)
         return net
 
-
     @slim.add_arg_scope
     # 定义核心bottleneck残差学习单元
     def bottleneck(self, inputs, depth, depth_bottleneck, stride,
-                outputs_collections=None, scope=None):
+                   outputs_collections=None, scope=None):
         with tf.variable_scope(scope, 'bottleneck_v2', [inputs]) as sc:
-            depth_in = slim.utils.last_dimension(inputs.get_shape(), min_rank=4)
+            depth_in = slim.utils.last_dimension(
+                inputs.get_shape(), min_rank=4)
             preact = slim.batch_norm(
                 inputs, activation_fn=tf.nn.relu, scope='preact')
             if depth == depth_in:
                 shortcut = self.subsample(preact, stride, 'shortcut')
             else:
                 shortcut = slim.conv2d(preact, depth, 1, stride=stride,
-                                    activation_fn=None, normalizer_fn=None, scope='shortcut')
+                                       activation_fn=None, normalizer_fn=None, scope='shortcut')
 
             residual = slim.conv2d(preact, depth_bottleneck,
-                                1, stride=1, scope='conv1')
+                                   1, stride=1, scope='conv1')
             residual = slim.conv2d(residual, depth_bottleneck,
-                                3, stride=stride, padding='SAME', scope='conv2')
+                                   3, stride=stride, padding='SAME', scope='conv2')
             residual = slim.conv2d(residual, depth, 1, stride=1,
-                                activation_fn=None, normalizer_fn=None, scope='conv3')
+                                   activation_fn=None, normalizer_fn=None, scope='conv3')
 
             output = tf.add(shortcut, residual)
 
@@ -163,33 +201,38 @@ class ResNet(object):
 
     # 定义生成ResNet V2的主函数
 
-
     def resnet_v2(self, blocks, class_num, reuse=None, scope=None):
         with tf.variable_scope(scope, 'resnet_v2', [self.inputs], reuse=reuse) as sc:
             with slim.arg_scope([slim.conv2d, self.bottleneck, self.stack_blocks_dense]):
                 with slim.arg_scope([slim.conv2d], activation_fn=None, normalizer_fn=None):
                     net = slim.conv2d(self.inputs, 64, 7, stride=2,
-                                    padding='SAME', scope='preconv')
+                                      padding='SAME', scope='preconv')
                 net = slim.max_pool2d(net, [3, 3], stride=2, scope='prepool')
                 net = self.stack_blocks_dense(net, blocks)
-                net = slim.batch_norm(net, activation_fn=tf.nn.relu, scope='postbn')
-                net = tf.reduce_mean(net, [1, 2], name='postpool', keepdims=True)
+                net = slim.batch_norm(
+                    net, activation_fn=tf.nn.relu, scope='postbn')
+                net = tf.reduce_mean(
+                    net, [1, 2], name='postpool', keepdims=True)
                 net = slim.flatten(net, scope='flatten')
-                net = slim.fully_connected(net, class_num, activation_fn=None, normalizer_fn=None, scope='fc')
+                net = slim.fully_connected(
+                    net, class_num, activation_fn=None, normalizer_fn=None, scope='fc')
                 # Convert end_points_collection into a dictionary of end_points.
-                net = slim.softmax(net, scope='predict')
-                self.predict = net
-                self.accuracy = tf.reduce_mean(tf.cast(self.predict - self.label), tf.float32)
-                self.loss = tf.reduce_mean(tf.square(self.predict - self.label))
+                net = slim.softmax(net, scope='prediction')
+                self.prediction = net
+                self.accuracy = tf.reduce_mean(
+                    tf.cast(self.prediction - self.label), tf.float32)
+                self.loss = tf.reduce_mean(
+                    tf.square(self.prediction - self.label))
 
                 tf.summary.scalar(self.accuracy)
                 tf.summary.scalar(self.loss)
 
-                self.summary = tf.summary.merge(tf.get_collection(tf.GraphKeys.SUMMARIES))
-                self.writer = tf.summary.FileWriter('log/train')
+                self.summary = tf.summary.merge(
+                    tf.get_collection(tf.GraphKeys.SUMMARIES))
+                self.writer = tf.summary.FileWriter(LOG_PATH)
                 self.trainer = tf.train.AdadeltaOptimizer().minimize(self.loss)
+                self.logger.info('Build Net OK')
                 return net
-
 
     def resnet_v2_struct(self, class_num, struct=[], reuse=None, scope='resnet_v2'):
         blocks = [
@@ -211,8 +254,6 @@ class ResNet(object):
         ]
         return self.resnet_v2_struct(class_num, struct, reuse, scope)
 
-
-
     def resnet_v2_101(self, class_num, reuse=None, scope='resnet_v2_101'):
         struct = [
             (256, 64, 3),
@@ -221,8 +262,6 @@ class ResNet(object):
             (2048, 512, 3)
         ]
         return self.resnet_v2_struct(class_num, struct, reuse, scope)
-
-
 
     def resnet_v2_152(self, class_num, reuse=None, scope='resnet_v2_152'):
         struct = [
@@ -233,7 +272,6 @@ class ResNet(object):
         ]
         return self.resnet_v2_struct(class_num, struct, reuse, scope)
 
-
     def resnet_v2_200(self, class_num, reuse=None, scope='resnet_v2_200'):
         struct = [
             (256, 64, 3),
@@ -242,28 +280,6 @@ class ResNet(object):
             (2048, 512, 3)
         ]
         return self.resnet_v2_struct(class_num, struct, reuse, scope)
-
-
-# 评测函数
-def time_tensorflow_run(session, target, info_string, num_batches):
-    num_steps_burn_in = 10
-    total_duration = 0.0
-    total_duration_squared = 0.0
-    for i in range(num_batches + num_steps_burn_in):
-        start_time = time.time()
-        _ = session.run(target)
-        duration = time.time() - start_time
-        if i >= num_steps_burn_in:
-            if not i % 10:
-                print('%s: step %d, duration = %.3f' %
-                      (datetime.now(), i - num_steps_burn_in, duration))
-            total_duration += duration
-            total_duration_squared += duration * duration
-    mn = total_duration / num_batches
-    vr = total_duration_squared / num_batches - mn * mn
-    sd = math.sqrt(vr)
-    print('%s: %s across %d steps, %.3f +/- %.3f sec / batch' %
-          (datetime.now(), info_string, num_batches, mn, sd))
 
 
 if __name__ == '__main__':

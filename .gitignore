@@ -2,5 +2,5 @@
 .git/*
 log/*
 data/*
-*/__pycache__/*
-Net/*.jpg
+*.jpg
+*.pyc

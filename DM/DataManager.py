@@ -3,38 +3,23 @@ import os
 import random
 from collections import deque
 
-import numpy as np
-import SimpleITK as sitk
-from tqdm import tqdm
+from config import DATA_PATH, MODS, RESULT_PATH
+from utils.lazy_property import lazy_property
 
-def lazy_property(func):
-    attr_name = "_lazy_" + func.__name__
-
-    @property
-    def _lazy_property(self):
-        if not hasattr(self, attr_name):
-            setattr(self, attr_name, func(self))
-        return getattr(self, attr_name)
-
-    return _lazy_property
 
 class DataManager(object):
-    def __init__(self, srcFolder, resultsDir, parameters, probabilityMap=False, mods=['t1']):
+    def __init__(self, srcFolder=DATA_PATH, resultsDir=RESULT_PATH, parameters=None, mods=MODS):
         self.mods = mods
         self.params = parameters
         self.srcFolder = srcFolder.strip('/').strip('\\').strip()
         self.resultsDir = resultsDir.strip('/').strip('\\').strip()
-        self.probabilityMap = probabilityMap
         self.fileList = list()
         self.trainList = list()
         self.testList = list()
         self.sitkImage = dict()
         self.sitkGT = dict()
+        self.numpyData = dict()
         self.test_rate = 0.1
-        self.numpyData = None
-        self.meanIntensityTrain = None
-        self.originalSizes = dict()
-        self.pic_size = 256
 
     @property
     def dim(self):
@@ -65,7 +50,8 @@ class DataManager(object):
         while stack:
             now_path = stack.pop()
             if os.path.isdir(now_path):
-                stack.extend([os.path.join(now_path, sub) for sub in os.listdir(now_path)])
+                stack.extend([os.path.join(now_path, sub)
+                              for sub in os.listdir(now_path)])
             else:
                 if now_path.endswith('nii.gz'):
                     now_dir = os.path.dirname(now_path)
@@ -87,7 +73,6 @@ class DataManager(object):
     def loadImage(self, fileList=None):
         ''' load images from image.nii'''
         raise NotImplementedError()
-
 
     def loadGT(self, fileList=None):
         ''' load labels from label.nii'''
@@ -117,22 +102,29 @@ class DataManager(object):
         total_num = len(self.fileList)
         test_num = int(total_num * self.test_rate)
         test_num_list = random.sample(range(total_num), test_num)
-        self.testList = [path for i, path in enumerate(self.fileList) if i in test_num_list]
-        self.trainList = [path for i, path in enumerate(self.fileList) if i not in test_num_list]
+        self.testList = [path for i, path in enumerate(
+            self.fileList) if i in test_num_list]
+        self.trainList = [path for i, path in enumerate(
+            self.fileList) if i not in test_num_list]
 
     def getTrainNumpyData(self, file_list=None):
         self.loadTrainData(file_list)
         if file_list is None:
             file_list = self.trainList
-        self.numpyData = self.getNumpyData(file_list, sitk.sitkLinear)
+        self.numpyData = self.getNumpyData(file_list)
 
     def getTestNumpyData(self, file_list=None):
         self.loadTestData(file_list)
         if file_list is None:
             file_list = self.testList
 
-        self.numpyData = self.getNumpyData(file_list, sitk.sitkLinear)
+        self.numpyData = self.getNumpyData(file_list)
 
-    def getNumpyData(self, data, method):
+    def getNumpyData(self, file_list):
         ''' load numpy data from sitk data'''
         raise NotImplementedError()
+
+    def clear_data(self):
+        self.sitkGT.clear()
+        self.sitkImage.clear()
+        self.numpyData.clear()
