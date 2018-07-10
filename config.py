@@ -1,4 +1,5 @@
 import os
+import time
 
 ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(ROOT_PATH, 'data')
@@ -6,6 +7,7 @@ RESULT_PATH = os.path.join(ROOT_PATH, 'result')
 TFR_PATH = os.path.join(ROOT_PATH, 'data', 'tfrecord')
 LOG_PATH = os.path.join(ROOT_PATH, 'log')
 MODEL_PATH = os.path.join(LOG_PATH, 'model')
+SUMMARY_PATH = os.path.join(LOG_PATH, 'summary_%s' % time.ctime())
 
 CLASS_NUM = 2
 SIZE = 240
@@ -17,9 +19,9 @@ REF_ORIGIN = (-0.0, -239.0, 0.0)
 REF_DIRECTION = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
 REF_SPACING = (1.0, 1.0)
 
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 EPOCH_REPEAT_NUM = 1
-SUMMARY_INTERVAL = 10
+SUMMARY_INTERVAL = 20
 VER_BATCH_SIZE = 32
 
 class Ref(object):

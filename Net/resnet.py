@@ -4,7 +4,7 @@ import os
 import numpy as np
 import tensorflow as tf
 
-from config import (BATCH_SIZE, CLASS_NUM, EPOCH_REPEAT_NUM, LOG_PATH, MOD_NUM,
+from config import (BATCH_SIZE, CLASS_NUM, EPOCH_REPEAT_NUM, SUMMARY_PATH, MOD_NUM,
                     MODEL_PATH, SIZE, SUMMARY_INTERVAL, VER_BATCH_SIZE)
 from tensorflow.contrib import slim
 from utils.logger import Logger
@@ -21,11 +21,15 @@ class Block(collections.namedtuple('Block', ['scope', 'unit_fn', 'is_first', 'ar
 
 class ResNet(object):
     def __init__(self, class_num=CLASS_NUM, res_type=None, struct=None):
+        config = tf.ConfigProto()
+        config.gpu_options.per_process_gpu_memory_fraction = 1.0
+        config.gpu_options.allow_growth = True
+
         self.__loaded = False
         self.logger = Logger('resnet')
         self.class_num = class_num
         self.graph = tf.Graph()
-        self.sess = tf.Session(graph=self.graph)
+        self.sess = tf.Session(graph=self.graph, config=config)
         with self.graph.as_default():
             self.img = tf.placeholder(
                 tf.float32, [None, SIZE, SIZE, MOD_NUM], name='img')
@@ -107,6 +111,7 @@ class ResNet(object):
             iterator, next_batch = generate_dataset(
                 file_list, batch_size, True)
             self.sess.run(iterator.initializer)
+            acc_list = list()
             while True:
                 try:
                     img, label = self.sess.run(next_batch)
@@ -118,10 +123,12 @@ class ResNet(object):
                         })
                     self.logger.info(
                         'accuracy: {}, loss: {}'.format(accuracy, loss))
+                    acc_list.append(accuracy)
                 except tf.errors.OutOfRangeError:
                     break
             self.logger.info('Verify end')
-            return accuracy, loss
+            self.logger.info('Average accuary %f' % (sum(acc_list) / len(acc_list)))
+
 
     def save(self, model_name):
         model_path = os.path.join(MODEL_PATH, model_name)
@@ -217,21 +224,18 @@ class ResNet(object):
                 net = tf.reduce_mean(
                     net, [1, 2], name='postpool', keepdims=True)
                 net = slim.flatten(net, scope='flatten')
-                logits = net = slim.fully_connected(
-                    net, class_num, activation_fn=None, normalizer_fn=None, scope='fc')
-                # Convert end_points_collection into a dictionary of end_points.
+                net = slim.fully_connected(net, class_num, activation_fn=None, normalizer_fn=None, scope='fc')
                 self.prediction = slim.softmax(net, scope='prediction')
-
                 correct_prediction = tf.equal(tf.argmax(self.prediction, 1), tf.argmax(self.label, 1))
                 self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-                self.loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self.label)
+                # self.loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self.label)
+                self.loss = -tf.reduce_mean(self.label * tf.log(self.prediction))
 
                 tf.summary.scalar('accuracy', self.accuracy)
                 tf.summary.scalar('loss', self.loss)
 
-                self.summary = tf.summary.merge(
-                    tf.get_collection(tf.GraphKeys.SUMMARIES))
-                self.writer = tf.summary.FileWriter(LOG_PATH, self.graph)
+                self.summary = tf.summary.merge(tf.get_collection(tf.GraphKeys.SUMMARIES))
+                self.writer = tf.summary.FileWriter(SUMMARY_PATH, self.graph)
                 self.trainer = tf.train.AdadeltaOptimizer().minimize(self.loss, global_step=self.train_step)
                 self.logger.info('Build Net OK')
                 self.saver = tf.train.Saver()

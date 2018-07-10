@@ -26,23 +26,21 @@ def train(dm=None, net=None):
 
     train_tfr_list = dm.get_tfrecord_path(dm.trainList)
     net.train(train_tfr_list)
-    net.save('model_1')
+    net.save('model_200')
 
 
 def verify(dm, net):
     dm.clear_data()
-    if not dm.testList:
-        dm.splitData()
-
     ver_tfr_list = dm.get_tfrecord_path(dm.testList)
-    acc, loss = net.verify(ver_tfr_list)
+    net.verify(ver_tfr_list)
 
 
 def main():
     dm = DMN()
     # transfer_to_tfr(dm)
-    net = ResNet(res_type=50)
+    net = ResNet(res_type=200)
     train(dm, net)
+    verify(dm, net)
 
 
 if __name__ == '__main__':

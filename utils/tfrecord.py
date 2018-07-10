@@ -20,11 +20,11 @@ def generate_writer(path):
 
 def generate_dataset(files_list, batch_size, verificate=False):
     dataset = tf.data.TFRecordDataset(files_list)
-    dataset = dataset.shuffle(100 * SIZE * SIZE)
+    dataset = dataset.shuffle(len(files_list) * 500)
     if not verificate:
         dataset = dataset.batch(batch_size)
     else:
-        dataset = dataset.batch(10 * SIZE * SIZE)
+        dataset = dataset.batch(batch_size)
     iterator = dataset.make_initializable_iterator()
     next_batch = iterator.get_next()
     example = tf.parse_example(
