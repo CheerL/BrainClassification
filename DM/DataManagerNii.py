@@ -112,8 +112,8 @@ class DataManagerNii(DataManager):
             tfr_writer.close()
 
     def get_tfrecord_path(self, file_list):
-        return [os.path.join(TFR_PATH, '%s.tfrecord' % os.path.split(img)[-1]) for img in file_list]
-
+        tfr_paths = [os.path.join(TFR_PATH, '%s.tfrecord' % os.path.split(img)[-1]) for img in file_list]
+        return [path for path in tfr_paths if os.path.exists(path) and os.path.isfile(path)]
 
 if __name__ == '__main__':
     dm = DataManagerNii('data', 'result', None)

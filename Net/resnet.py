@@ -4,15 +4,14 @@ import os
 import numpy as np
 import tensorflow as tf
 
-from config import (BATCH_SIZE, CLASS_NUM, EPOCH_REPEAT_NUM, SUMMARY_PATH, MOD_NUM,
-                    MODEL_PATH, SIZE, SUMMARY_INTERVAL, VER_BATCH_SIZE)
+from config import (BATCH_SIZE, CLASS_NUM, EPOCH_REPEAT_NUM, SUMMARY_PATH, MOD_NUM, LR_DECAY_STEP,
+                    MODEL_PATH, SIZE, SUMMARY_INTERVAL, VER_BATCH_SIZE, CONV_WEIGHT_DECAY, LR_DECAY_RATE,
+                    BATCH_NORM_DECAY, BATCH_NORM_EPSILON, BATCH_NORM_SCALE, LEARNING_RATE, MOMENTUM)
 from tensorflow.contrib import slim
 from utils.logger import Logger
 from utils.tfrecord import generate_dataset
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
-# 定义Block
 
 
 class Block(collections.namedtuple('Block', ['scope', 'unit_fn', 'is_first', 'args'])):
@@ -33,7 +32,8 @@ class ResNet(object):
         with self.graph.as_default():
             self.img = tf.placeholder(
                 tf.float32, [None, SIZE, SIZE, MOD_NUM], name='img')
-            self.label = tf.placeholder(tf.float32, [None, CLASS_NUM], name='label')
+            self.label = tf.placeholder(
+                tf.float32, [None, CLASS_NUM], name='label')
             # self.inputs = tf.reshape(self.img, [-1, SIZE, SIZE, MOD_NUM])
             self.inputs = self.img
             self.prediction = None
@@ -105,6 +105,10 @@ class ResNet(object):
                 self.img: img
             })
 
+    def whole_predict(self, tfr_name):
+        with self.graph.as_default():
+            self.start()
+
     def verify(self, file_list, batch_size=VER_BATCH_SIZE):
         with self.graph.as_default():
             self.start()
@@ -127,8 +131,8 @@ class ResNet(object):
                 except tf.errors.OutOfRangeError:
                     break
             self.logger.info('Verify end')
-            self.logger.info('Average accuary %f' % (sum(acc_list) / len(acc_list)))
-
+            self.logger.info('Average accuary %f' %
+                             (sum(acc_list) / len(acc_list)))
 
     def save(self, model_name):
         model_path = os.path.join(MODEL_PATH, model_name)
@@ -146,10 +150,10 @@ class ResNet(object):
             return slim.max_pool2d(inputs, 1, stride=factor, scope=scope)
 
     def resnet_arg_scope(self, is_training=True,
-                         weight_decay=0.0001,
-                         batch_norm_decay=0.997,
-                         batch_norm_epsilon=1e-5,
-                         batch_norm_scale=True):
+                         conv_weight_decay=CONV_WEIGHT_DECAY,
+                         batch_norm_decay=BATCH_NORM_DECAY,
+                         batch_norm_epsilon=BATCH_NORM_EPSILON,
+                         batch_norm_scale=BATCH_NORM_SCALE):
         batch_norm_params = {
             'is_training': is_training,
             'decay': batch_norm_decay,
@@ -159,15 +163,17 @@ class ResNet(object):
         }
 
         with slim.arg_scope([slim.conv2d],
+                            padding='SAME',
                             weights_regularizer=slim.l2_regularizer(
-                                weight_decay),
+                                conv_weight_decay),
                             weights_initializer=slim.variance_scaling_initializer(),
                             activation_fn=tf.nn.relu,
                             normalizer_fn=slim.batch_norm,
                             normalizer_params=batch_norm_params):
             with slim.arg_scope([slim.batch_norm], **batch_norm_params):
-                with slim.arg_scope([slim.max_pool2d], padding='SAME') as arg_sc:
-                    return arg_sc
+                with slim.arg_scope([slim.fully_connected], activation_fn=None, normalizer_fn=None):
+                    with slim.arg_scope([slim.max_pool2d], padding='SAME') as arg_sc:
+                        return arg_sc
 
     @slim.add_arg_scope
     def stack_blocks_dense(self, net, blocks, outputs_collections=None):
@@ -196,50 +202,53 @@ class ResNet(object):
                 shortcut = self.subsample(preact, stride, 'shortcut')
             else:
                 shortcut = slim.conv2d(preact, depth, 1, stride=stride,
-                                       activation_fn=None, normalizer_fn=None, scope='shortcut')
+                                       activation_fn=None, scope='shortcut')
 
             residual = slim.conv2d(preact, depth_bottleneck,
                                    1, stride=1, scope='conv1')
             residual = slim.conv2d(residual, depth_bottleneck,
-                                   3, stride=stride, padding='SAME', scope='conv2')
-            residual = slim.conv2d(residual, depth, 1, stride=1,
-                                   activation_fn=None, normalizer_fn=None, scope='conv3')
-
+                                   3, stride=stride, scope='conv2')
+            residual = slim.conv2d(residual, depth, 1, activation_fn=None,
+                                   normalizer_fn=None, stride=1, scope='conv3')
             output = tf.add(shortcut, residual)
-
             return slim.utils.collect_named_outputs(outputs_collections, sc.name, output)
 
     # 定义生成ResNet V2的主函数
 
     def resnet_v2(self, blocks, class_num, reuse=None, scope=None):
         with tf.variable_scope(scope, 'resnet_v2', [self.inputs], reuse=reuse) as sc:
-            with slim.arg_scope([slim.conv2d, self.bottleneck, self.stack_blocks_dense]):
-                with slim.arg_scope([slim.conv2d], activation_fn=None, normalizer_fn=None):
-                    net = slim.conv2d(self.inputs, 64, 7, stride=2,
-                                      padding='SAME', scope='preconv')
-                net = slim.max_pool2d(net, [3, 3], stride=2, scope='prepool')
-                net = self.stack_blocks_dense(net, blocks)
-                net = slim.batch_norm(
-                    net, activation_fn=tf.nn.relu, scope='postbn')
-                net = tf.reduce_mean(
-                    net, [1, 2], name='postpool', keepdims=True)
-                net = slim.flatten(net, scope='flatten')
-                net = slim.fully_connected(net, class_num, activation_fn=None, normalizer_fn=None, scope='fc')
-                self.prediction = slim.softmax(net, scope='prediction')
-                correct_prediction = tf.equal(tf.argmax(self.prediction, 1), tf.argmax(self.label, 1))
-                self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-                # self.loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self.label)
-                self.loss = -tf.reduce_mean(self.label * tf.log(self.prediction))
+            net = slim.conv2d(self.inputs, 64, 7, activation_fn=None,
+                              normalizer_fn=None, stride=2, scope='preconv')
+            net = slim.max_pool2d(net, [3, 3], stride=2, scope='prepool')
+            net = self.stack_blocks_dense(net, blocks)
+            net = slim.batch_norm(
+                net, activation_fn=tf.nn.relu, scope='postbn')
+            net = tf.reduce_mean(net, [1, 2], name='postpool', keepdims=True)
+            # net = tf.nn.avg_pool(net, [1, 3, 3, 1], [1, 1, 1, 1], padding='SAME', name='postpool')
+            net = slim.flatten(net, scope='flatten')
+            net = slim.fully_connected(net, class_num, scope='fc')
+            cross_entropy = tf.losses.softmax_cross_entropy(
+                self.label, net, scope='loss')
+            self.loss = tf.losses.get_total_loss(False)
+            self.prediction = slim.softmax(net, scope='prediction')
+            self.accuracy = tf.reduce_mean(tf.cast(
+                tf.equal(tf.argmax(self.prediction, 1), tf.argmax(self.label, 1)), tf.float32))
 
-                tf.summary.scalar('accuracy', self.accuracy)
-                tf.summary.scalar('loss', self.loss)
+            tf.summary.scalar('accuracy', self.accuracy)
+            tf.summary.scalar('cross_entropy', cross_entropy)
+            tf.summary.scalar('loss', self.loss)
 
-                self.summary = tf.summary.merge(tf.get_collection(tf.GraphKeys.SUMMARIES))
-                self.writer = tf.summary.FileWriter(SUMMARY_PATH, self.graph)
-                self.trainer = tf.train.AdadeltaOptimizer().minimize(self.loss, global_step=self.train_step)
-                self.logger.info('Build Net OK')
-                self.saver = tf.train.Saver()
-                return net
+            self.summary = tf.summary.merge(
+                tf.get_collection(tf.GraphKeys.SUMMARIES))
+            self.writer = tf.summary.FileWriter(SUMMARY_PATH, self.graph)
+            
+            learning_rate = tf.train.exponential_decay(LEARNING_RATE, self.train_step, LR_DECAY_STEP, LR_DECAY_RATE)
+            self.trainer = tf.train.MomentumOptimizer(learning_rate, MOMENTUM).minimize(
+                self.loss, global_step=self.train_step)
+            # self.trainer = tf.train.AdadeltaOptimizer(learning_rate).minimize(self.loss, global_step=self.train_step)
+            self.saver = tf.train.Saver()
+            self.logger.info('Build Net OK')
+            return net
 
     def resnet_v2_struct(self, class_num, struct=[], reuse=None, scope='resnet_v2'):
         blocks = [
@@ -250,7 +259,9 @@ class ResNet(object):
                 block_struct
             ) for num, block_struct in enumerate(struct)
         ]
-        return self.resnet_v2(blocks, class_num, reuse=reuse, scope=scope)
+        with slim.arg_scope(self.resnet_arg_scope(is_training=True)):
+            with slim.arg_scope([slim.conv2d, self.bottleneck, self.stack_blocks_dense]):
+                return self.resnet_v2(blocks, class_num, reuse=reuse, scope=scope)
 
     def resnet_v2_50(self, class_num, reuse=None, scope='resnet_v2_50'):
         struct = [

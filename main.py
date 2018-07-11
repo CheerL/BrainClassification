@@ -1,5 +1,7 @@
 from DM.DataManagerNii import DataManagerNii as DMN
 from Net.resnet import ResNet
+from config import TEST_PATH
+import os
 
 
 def transfer_to_tfr(dm=None):
@@ -26,7 +28,7 @@ def train(dm=None, net=None):
 
     train_tfr_list = dm.get_tfrecord_path(dm.trainList)
     net.train(train_tfr_list)
-    net.save('model_200')
+    net.save('model')
 
 
 def verify(dm, net):
@@ -34,11 +36,13 @@ def verify(dm, net):
     ver_tfr_list = dm.get_tfrecord_path(dm.testList)
     net.verify(ver_tfr_list)
 
+def test(dm, net):
+    test_files = [os.path.join(TEST_PATH, each) for each in os.listdir(TEST_PATH)]
 
 def main():
     dm = DMN()
     # transfer_to_tfr(dm)
-    net = ResNet(res_type=200)
+    net = ResNet(res_type=50)
     train(dm, net)
     verify(dm, net)
 

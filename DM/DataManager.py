@@ -98,12 +98,15 @@ class DataManager(object):
         self.loadImage(file_list)
         self.loadGT(file_list)
 
-    def splitData(self):
+    def splitData(self, test_rate=None):
         if not self.fileList:
             self.createFileList()
 
+        if test_rate is None:
+            test_rate = self.test_rate
+
         total_num = len(self.fileList)
-        test_num = int(total_num * self.test_rate)
+        test_num = int(total_num * test_rate)
         test_num_list = random.sample(range(total_num), test_num)
         self.testList = [path for i, path in enumerate(
             self.fileList) if i in test_num_list]
