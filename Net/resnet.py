@@ -3,11 +3,13 @@ import os
 
 import numpy as np
 import tensorflow as tf
-
-from config import (BATCH_SIZE, CLASS_NUM, EPOCH_REPEAT_NUM, SUMMARY_PATH, MOD_NUM, LR_DECAY_STEP,
-                    MODEL_PATH, SIZE, SUMMARY_INTERVAL, VER_BATCH_SIZE, CONV_WEIGHT_DECAY, LR_DECAY_RATE,
-                    BATCH_NORM_DECAY, BATCH_NORM_EPSILON, BATCH_NORM_SCALE, LEARNING_RATE, MOMENTUM)
 from tensorflow.contrib import slim
+
+from config import (BATCH_NORM_DECAY, BATCH_NORM_EPSILON, BATCH_NORM_SCALE,
+                    BATCH_SIZE, CLASS_NUM, CONV_WEIGHT_DECAY, EPOCH_REPEAT_NUM,
+                    LEARNING_RATE, LR_DECAY_RATE, LR_DECAY_STEP, MOD_NUM,
+                    MODEL_PATH, MOMENTUM, SIZE, SUMMARY_INTERVAL, SUMMARY_PATH,
+                    VER_BATCH_SIZE)
 from utils.logger import Logger
 from utils.tfrecord import generate_dataset
 
@@ -72,7 +74,7 @@ class ResNet(object):
             iterator, next_batch = generate_dataset(file_list, batch_size)
             for epoch in range(epoch_repeat_num):
                 self.sess.run(iterator.initializer)
-                self.logger.info('Start train epoch {}/{}'.format(
+                self.logger.info('Start train epoch %d/%d' % (
                     epoch + 1, epoch_repeat_num))
                 while True:
                     try:
@@ -92,7 +94,7 @@ class ResNet(object):
                                     self.label: label
                                 })
                             self.writer.add_summary(summary, train_step)
-                            self.logger.info('Save summary {}, accuracy: {}, loss {}'.format(
+                            self.logger.info('Save summary %d, accuracy: %f, loss %f' % (
                                 train_step, accuracy, loss))
                     except tf.errors.OutOfRangeError:
                         break
@@ -105,9 +107,8 @@ class ResNet(object):
                 self.img: img
             })
 
-    def whole_predict(self, tfr_name):
-        with self.graph.as_default():
-            self.start()
+    def whole_predict(self, tfr_name, batch_size=BATCH_SIZE):
+        predict_list, label_list = self.verify([tfr_name], batch_size)
 
     def verify(self, file_list, batch_size=VER_BATCH_SIZE):
         with self.graph.as_default():
@@ -115,31 +116,46 @@ class ResNet(object):
             iterator, next_batch = generate_dataset(
                 file_list, batch_size, True)
             self.sess.run(iterator.initializer)
+            label_list = np.array([], dtype=np.float32)
+            predict_list = np.array([], dtype=np.float32)
             acc_list = list()
             while True:
                 try:
                     img, label = self.sess.run(next_batch)
-                    accuracy, loss = self.sess.run(
-                        [self.accuracy, self.loss],
+                    accuracy, loss, predict = self.sess.run(
+                        [self.accuracy, self.loss, self.prediction],
                         feed_dict={
                             self.img: img,
                             self.label: label
                         })
                     self.logger.info(
-                        'accuracy: {}, loss: {}'.format(accuracy, loss))
+                        'accuracy: %f, loss: %f' % (accuracy, loss))
+                    predict_list = np.concatenate(
+                        [predict_list, predict.argmax(axis=1)])
+                    label_list = np.concatenate(
+                        [label_list, label.argmax(axis=1)])
                     acc_list.append(accuracy)
                 except tf.errors.OutOfRangeError:
                     break
+            predict_list[predict_list >= 0.5] = 1
+            predict_list[predict_list < 0.5] = 0
+            true_list = predict_list[label_list == 0]
+            false_list = predict_list[label_list == 1]
+            tn_rate = true_list.sum() / len(true_list)
+            tp_rate = 1 - tn_rate
+            fn_rate = false_list.sum() / len(false_list)
+            fp_rate = 1 - fn_rate
+            avg_accuracy = sum(acc_list) / len(acc_list)
             self.logger.info('Verify end')
-            self.logger.info('Average accuary %f' %
-                             (sum(acc_list) / len(acc_list)))
+            self.logger.info('Average accuary %f, TP %f, TN %f, FP %f, FN %f' %
+                             (avg_accuracy, tp_rate, tn_rate, fp_rate, fn_rate))
+            return predict_list, label_list
 
     def save(self, model_name):
         model_path = os.path.join(MODEL_PATH, model_name)
         self.saver.save(self.sess, model_path)
 
-    def load(self, model_name):
-        model_path = os.path.join(MODEL_PATH, model_name)
+    def load(self, model_path):
         self.saver.restore(self.sess, model_path)
         self.__loaded = True
 
@@ -178,7 +194,7 @@ class ResNet(object):
     @slim.add_arg_scope
     def stack_blocks_dense(self, net, blocks, outputs_collections=None):
         for block in blocks:
-            with tf.variable_scope(block.scope, 'block', [net]) as sc:
+            with tf.variable_scope(block.scope, 'block', [net]) as inter_scope:
                 unit_depth, unit_depth_bottleneck, unit_num = block.args
                 for i in range(unit_num):
                     with tf.variable_scope('unit_%d' % i, values=[net]):
@@ -186,14 +202,14 @@ class ResNet(object):
                         net = block.unit_fn(net, depth=unit_depth, stride=unit_stride,
                                             depth_bottleneck=unit_depth_bottleneck)
                 net = slim.utils.collect_named_outputs(
-                    outputs_collections, sc.name, net)
+                    outputs_collections, inter_scope.name, net)
         return net
 
     @slim.add_arg_scope
     # 定义核心bottleneck残差学习单元
     def bottleneck(self, inputs, depth, depth_bottleneck, stride,
                    outputs_collections=None, scope=None):
-        with tf.variable_scope(scope, 'bottleneck_v2', [inputs]) as sc:
+        with tf.variable_scope(scope, 'bottleneck_v2', [inputs]) as inter_scope:
             depth_in = slim.utils.last_dimension(
                 inputs.get_shape(), min_rank=4)
             preact = slim.batch_norm(
@@ -211,12 +227,12 @@ class ResNet(object):
             residual = slim.conv2d(residual, depth, 1, activation_fn=None,
                                    normalizer_fn=None, stride=1, scope='conv3')
             output = tf.add(shortcut, residual)
-            return slim.utils.collect_named_outputs(outputs_collections, sc.name, output)
+            return slim.utils.collect_named_outputs(outputs_collections, inter_scope.name, output)
 
     # 定义生成ResNet V2的主函数
 
     def resnet_v2(self, blocks, class_num, reuse=None, scope=None):
-        with tf.variable_scope(scope, 'resnet_v2', [self.inputs], reuse=reuse) as sc:
+        with tf.variable_scope(scope, 'resnet_v2', [self.inputs], reuse=reuse):
             net = slim.conv2d(self.inputs, 64, 7, activation_fn=None,
                               normalizer_fn=None, stride=2, scope='preconv')
             net = slim.max_pool2d(net, [3, 3], stride=2, scope='prepool')
@@ -241,11 +257,11 @@ class ResNet(object):
             self.summary = tf.summary.merge(
                 tf.get_collection(tf.GraphKeys.SUMMARIES))
             self.writer = tf.summary.FileWriter(SUMMARY_PATH, self.graph)
-            
-            learning_rate = tf.train.exponential_decay(LEARNING_RATE, self.train_step, LR_DECAY_STEP, LR_DECAY_RATE)
+
+            learning_rate = tf.train.exponential_decay(
+                LEARNING_RATE, self.train_step, LR_DECAY_STEP, LR_DECAY_RATE)
             self.trainer = tf.train.MomentumOptimizer(learning_rate, MOMENTUM).minimize(
                 self.loss, global_step=self.train_step)
-            # self.trainer = tf.train.AdadeltaOptimizer(learning_rate).minimize(self.loss, global_step=self.train_step)
             self.saver = tf.train.Saver()
             self.logger.info('Build Net OK')
             return net

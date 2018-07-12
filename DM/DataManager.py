@@ -1,25 +1,22 @@
 import os
-#import cv2
 import random
 from collections import deque
 
-from config import DATA_PATH, MODS, RESULT_PATH
+from config import DATA_PATH, MODS, TEST_RATE
 from utils.lazy_property import lazy_property
 
 
 class DataManager(object):
-    def __init__(self, srcFolder=DATA_PATH, resultsDir=RESULT_PATH, parameters=None, mods=MODS):
+    def __init__(self, data_path=DATA_PATH, mods=MODS):
         self.mods = mods
-        self.params = parameters
-        self.srcFolder = srcFolder
-        self.resultsDir = resultsDir
-        self.fileList = list()
-        self.trainList = list()
-        self.testList = list()
-        self.sitkImage = dict()
-        self.sitkGT = dict()
-        self.numpyData = dict()
-        self.test_rate = 0.1
+        self.data_path = data_path
+        self.file_list = list()
+        self.train_list = list()
+        self.test_list = list()
+        self.sitk_image = dict()
+        self.sitk_label = dict()
+        self.numpy_data = dict()
+        self.test_rate = TEST_RATE
 
     @property
     def dim(self):
@@ -40,12 +37,12 @@ class DataManager(object):
         left_dim.remove(self.dim)
         return tuple(left_dim)
 
-    def createFileList(self, limit=0):
-        ''' find all directories containing images and put there name in the fileList'''
-        if self.fileList:
-            self.fileList.clear()
+    def create_file_list(self, limit=0):
+        ''' find all directories containing images and put there name in the file_list'''
+        if self.file_list:
+            self.file_list.clear()
 
-        stack = deque([self.srcFolder])
+        stack = deque([self.data_path])
 
         while stack:
             now_path = stack.pop()
@@ -55,82 +52,82 @@ class DataManager(object):
             else:
                 if now_path.endswith('nii.gz'):
                     now_dir = os.path.dirname(now_path)
-                    if now_dir not in self.fileList:
-                        self.fileList.append(now_dir)
+                    if now_dir not in self.file_list:
+                        self.file_list.append(now_dir)
 
-        self.checkFileList()
+        self.check_file_list()
         if limit > 0:
-            self.fileList = random.sample(self.fileList, k=limit)
+            self.file_list = random.sample(self.file_list, k=limit)
 
-    def checkFileList(self):
-        for img_dir in self.fileList:
+    def check_file_list(self):
+        for img_dir in self.file_list:
             img_str = ''.join(os.listdir(img_dir))
             for mod in self.mods:
                 if mod not in img_str:
-                    self.fileList.remove(img_dir)
+                    self.file_list.remove(img_dir)
                     break
 
-    def loadImage(self, fileList=None):
+    def load_image(self, file_list=None):
         ''' load images from image.nii'''
         raise NotImplementedError()
 
-    def loadGT(self, fileList=None):
+    def load_label(self, file_list=None):
         ''' load labels from label.nii'''
         raise NotImplementedError()
 
-    def loadTrainData(self, file_list=None):
+    def load_train_data(self, file_list=None):
         ''' load training data'''
         if file_list is None:
-            if not (self.trainList and self.trainList):
-                self.splitData()
-            file_list = self.trainList
+            if not (self.train_list and self.train_list):
+                self.split_data()
+            file_list = self.train_list
 
-        self.loadImage(file_list)
-        self.loadGT(file_list)
+        self.load_image(file_list)
+        self.load_label(file_list)
 
-    def loadTestData(self, file_list=None):
+    def load_test_data(self, file_list=None):
         ''' load testing data or validation data'''
         if file_list is None:
-            if not (self.trainList and self.testList):
-                self.splitData()
-            file_list = self.testList
+            if not (self.train_list and self.test_list):
+                self.split_data()
+            file_list = self.test_list
 
-        self.loadImage(file_list)
-        self.loadGT(file_list)
+        self.load_image(file_list)
+        self.load_label(file_list)
 
-    def splitData(self, test_rate=None):
-        if not self.fileList:
-            self.createFileList()
+    def split_data(self, test_rate=None):
+        if not self.file_list:
+            self.create_file_list()
 
         if test_rate is None:
             test_rate = self.test_rate
 
-        total_num = len(self.fileList)
+        total_num = len(self.file_list)
         test_num = int(total_num * test_rate)
         test_num_list = random.sample(range(total_num), test_num)
-        self.testList = [path for i, path in enumerate(
-            self.fileList) if i in test_num_list]
-        self.trainList = [path for i, path in enumerate(
-            self.fileList) if i not in test_num_list]
+        self.test_list = [path for i, path in enumerate(
+            self.file_list) if i in test_num_list]
+        self.train_list = [path for i, path in enumerate(
+            self.file_list) if i not in test_num_list]
 
-    def getTrainNumpyData(self, file_list=None):
-        self.loadTrainData(file_list)
+    def get_train_numpy_data(self, file_list=None):
+        self.load_train_data(file_list)
         if file_list is None:
-            file_list = self.trainList
-        self.numpyData = self.getNumpyData(file_list)
+            file_list = self.train_list
+        self.numpy_data = self.get_numpy_data(file_list)
 
-    def getTestNumpyData(self, file_list=None):
-        self.loadTestData(file_list)
+    def get_test_numpy_data(self, file_list=None):
+        self.load_test_data(file_list)
         if file_list is None:
-            file_list = self.testList
+            file_list = self.test_list
 
-        self.numpyData = self.getNumpyData(file_list)
+        self.numpy_data = self.get_numpy_data(file_list)
 
-    def getNumpyData(self, file_list):
+    def get_numpy_data(self, file_list):
         ''' load numpy data from sitk data'''
         raise NotImplementedError()
 
     def clear_data(self):
-        self.sitkGT.clear()
-        self.sitkImage.clear()
-        self.numpyData.clear()
+        self.sitk_label.clear()
+        self.sitk_image.clear()
+        self.numpy_data.clear()
