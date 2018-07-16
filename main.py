@@ -3,7 +3,7 @@ import random
 
 from config import TEST_TFR_PATH, TFR_PATH, TEST_RATE
 from DM.DataManagerNii import DataManagerNii as DMN
-from Net.resnet import ResNet
+from Net.resnet import ResNet, ResNet_v2
 
 
 def transfer_to_tfr(dm=None):
@@ -64,7 +64,7 @@ def main():
     # dm = DMN()
     # transfer_to_tfr(dm)
     train_tfr_list, ver_tfr_list, test_tfr_list = generate_list()
-    net = ResNet(res_type=50)
+    net = ResNet_v2()
     train(net, train_tfr_list)
     verify(net, ver_tfr_list)
 
