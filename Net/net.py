@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib import slim
 
-from config import (BATCH_SIZE, CLASS_NUM, EPOCH_REPEAT_NUM, MOD_NUM,
+from config import (BATCH_SIZE, CLASS_NUM, EPOCH_REPEAT_NUM, MOD_NUM, LOG_PATH,
                     MODEL_PATH, SIZE, SUMMARY_INTERVAL, VER_BATCH_SIZE)
 from utils.logger import Logger
 from utils.tfrecord import generate_dataset
@@ -105,8 +105,13 @@ class Net(object):
             while True:
                 try:
                     img, label = self.sess.run(next_batch)
-                    accuracy, loss, predict = self.sess.run(
-                        [self.accuracy, self.loss, self.prediction],
+                    accuracy, loss, predict, step = self.sess.run(
+                        [
+                            self.accuracy,
+                            self.loss,
+                            self.prediction,
+                            self.train_step
+                        ],
                         feed_dict={
                             self.img: img,
                             self.label: label
@@ -129,9 +134,14 @@ class Net(object):
             fn_rate = false_list.sum() / len(false_list)
             fp_rate = 1 - fn_rate
             avg_accuracy = sum(acc_list) / len(acc_list)
+            result = '%d: Average accuary %f, TP %f, TN %f, FP %f, FN %f' % 
+                      (step, avg_accuracy, tp_rate, tn_rate, fp_rate, fn_rate)
             self.logger.info('Verify end')
-            self.logger.info('Average accuary %f, TP %f, TN %f, FP %f, FN %f' %
-                             (avg_accuracy, tp_rate, tn_rate, fp_rate, fn_rate))
+            self.logger.info(result)
+
+            with open(os.path.join(LOG_PATH, 'result'), 'a+') as file:
+                file.write(result)
+
             return predict_list, label_list
 
     def save(self, model_name):
