@@ -2,7 +2,7 @@ import os
 import random
 from collections import deque
 
-from config import DATA_PATH, MODS, TEST_RATE
+from config import DATA_PATH, MODS, TEST_RATE, VAL_RATE
 from utils.lazy_property import lazy_property
 
 
@@ -12,11 +12,12 @@ class DataManager(object):
         self.data_path = data_path
         self.file_list = list()
         self.train_list = list()
-        self.test_list = list()
+        self.val_list = list()
         self.sitk_image = dict()
         self.sitk_label = dict()
         self.numpy_data = dict()
         self.test_rate = TEST_RATE
+        self.val_rate = VAL_RATE
 
     @property
     def dim(self):
@@ -85,30 +86,30 @@ class DataManager(object):
         self.load_image(file_list)
         self.load_label(file_list)
 
-    def load_test_data(self, file_list=None):
-        ''' load testing data or validation data'''
+    def load_val_data(self, file_list=None):
+        ''' load validation data'''
         if file_list is None:
-            if not (self.train_list and self.test_list):
+            if not (self.train_list and self.val_list):
                 self.split_data()
-            file_list = self.test_list
+            file_list = self.val_list
 
         self.load_image(file_list)
         self.load_label(file_list)
 
-    def split_data(self, test_rate=None):
+    def split_data(self, val_rate=None):
         if not self.file_list:
             self.create_file_list()
 
-        if test_rate is None:
-            test_rate = self.test_rate
+        if val_rate is None:
+            val_rate = self.val_rate
 
         total_num = len(self.file_list)
-        test_num = int(total_num * test_rate)
-        test_num_list = random.sample(range(total_num), test_num)
-        self.test_list = [path for i, path in enumerate(
-            self.file_list) if i in test_num_list]
+        val_num = int(total_num * val_rate)
+        val_num_list = random.sample(range(total_num), val_num)
+        self.val_list = [path for i, path in enumerate(
+            self.file_list) if i in val_num_list]
         self.train_list = [path for i, path in enumerate(
-            self.file_list) if i not in test_num_list]
+            self.file_list) if i not in val_num_list]
 
     def get_train_numpy_data(self, file_list=None):
         self.load_train_data(file_list)
@@ -116,10 +117,10 @@ class DataManager(object):
             file_list = self.train_list
         self.numpy_data = self.get_numpy_data(file_list)
 
-    def get_test_numpy_data(self, file_list=None):
-        self.load_test_data(file_list)
+    def get_val_numpy_data(self, file_list=None):
+        self.load_val_data(file_list)
         if file_list is None:
-            file_list = self.test_list
+            file_list = self.val_list
 
         self.numpy_data = self.get_numpy_data(file_list)
 

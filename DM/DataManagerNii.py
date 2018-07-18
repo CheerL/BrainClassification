@@ -1,11 +1,12 @@
 import os
-
 #import cv2
+import random
+
 import numpy as np
 import SimpleITK as sitk
 from tqdm import tqdm
 
-from config import TFR_PATH, Ref
+from config import TEST_TFR_PATH, TFR_PATH, Ref
 from DM.DataManager import DataManager
 from utils.tfrecord import generate_example, generate_writer
 
@@ -104,17 +105,32 @@ class DataManagerNii(DataManager):
         return label
 
     def write_tfrecord(self):
+        for path in [TFR_PATH, TEST_TFR_PATH]:
+            for file in os.listdir(path):
+                os.remove(os.path.join(path, file))
+
+        test_name = random.sample(
+            list(self.numpy_data.keys()),
+            int(len(self.numpy_data.keys()) * self.test_rate)
+        )
         for name, data in self.numpy_data.items():
-            tfr_name = os.path.join(TFR_PATH, '%s.tfrecord' % name)
+            if name in test_name:
+                tfr_name = os.path.join(TEST_TFR_PATH, '%s.tfrecord' % name)
+            else:
+                tfr_name = os.path.join(TFR_PATH, '%s.tfrecord' % name)
+
             tfr_writer = generate_writer(tfr_name)
             for i, label in enumerate(data['label']):
-                img = np.stack([data[mod][i] for mod in self.mods], axis=2)
-                example = generate_example(img, label)
-                tfr_writer.write(example.SerializeToString())
+                base_img = data[self.mods[0]][i]
+
+                if len(base_img[base_img > 0]) / Ref.square > 0.2:
+                    img = np.stack([data[mod][i] for mod in self.mods], axis=2)
+                    example = generate_example(img, label)
+                    tfr_writer.write(example.SerializeToString())
             tfr_writer.close()
 
-    def get_tfrecord_path(self, file_list):
-        tfr_paths = [os.path.join(TFR_PATH, '%s.tfrecord' %
+    def get_tfrecord_path(self, file_list, test=True):
+        tfr_paths = [os.path.join(TFR_PATH if not test else TEST_TFR_PATH, '%s.tfrecord' %
                                   os.path.split(img)[-1]) for img in file_list]
         return [path for path in tfr_paths if os.path.exists(path) and os.path.isfile(path)]
 
