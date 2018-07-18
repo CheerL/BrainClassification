@@ -50,4 +50,13 @@ def path_init(paths):
         if not os.path.exists(path):
             os.makedirs(path)
 
+def clear_empty_log():
+    log_base_path = os.path.join(ROOT_PATH, 'log')
+    for dir_name in os.listdir(log_base_path):
+        sub_path = os.path.join(log_base_path, dir_name)
+        paths = os.listdir(sub_path)
+        if not (paths and 'model' in paths):
+            os.removedirs(sub_path)
+
 path_init([DATA_PATH, TFR_PATH, TEST_TFR_PATH, LOG_PATH])
+clear_empty_log()
