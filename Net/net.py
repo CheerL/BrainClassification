@@ -134,8 +134,8 @@ class Net(object):
             fn_rate = false_list.sum() / len(false_list)
             fp_rate = 1 - fn_rate
             avg_accuracy = sum(acc_list) / len(acc_list)
-            result = '%d: Average accuary %f, TP %f, TN %f, FP %f, FN %f' % 
-                      (step, avg_accuracy, tp_rate, tn_rate, fp_rate, fn_rate)
+            result = '%d: Average accuary %f, TP %f, TN %f, FP %f, FN %f' % (
+                step, avg_accuracy, tp_rate, tn_rate, fp_rate, fn_rate)
             self.logger.info('Verify end')
             self.logger.info(result)
 
