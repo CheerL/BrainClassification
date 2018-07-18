@@ -325,7 +325,7 @@ class ResNet_v2(Net):
             tf.summary.scalar('accuracy', self.accuracy)
             tf.summary.scalar('lr', learning_rate)
             self.summary = tf.summary.merge(
-                tf.get_collection(tf.GraphKeys.SUMMARIES))
+                self.graph.get_collection(tf.GraphKeys.SUMMARIES))
             self.writer = tf.summary.FileWriter(SUMMARY_PATH, self.graph)
             return net
 

@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from config import MOD_NUM, SIZE, CLASS_NUM
+from config import MOD_NUM, SIZE, CLASS_NUM, REPEAT_NUM
 
 
 def generate_example(img, label):
@@ -18,12 +18,15 @@ def generate_writer(path):
     return tf.python_io.TFRecordWriter(path)
 
 
-def generate_dataset(files_list, batch_size, verificate=False):
+def generate_dataset(files_list, batch_size,
+                     train=True, repeat_time=REPEAT_NUM,
+                     shuffle=True, batch=True):
     dataset = tf.data.TFRecordDataset(files_list)
-    dataset = dataset.shuffle(len(files_list) * 500)
-    if not verificate:
-        dataset = dataset.batch(batch_size)
-    else:
+    if shuffle:
+        dataset = dataset.shuffle(len(files_list) * 500)
+    if train:
+        dataset = dataset.repeat(repeat_time)
+    if batch:
         dataset = dataset.batch(batch_size)
     iterator = dataset.make_initializable_iterator()
     next_batch = iterator.get_next()
