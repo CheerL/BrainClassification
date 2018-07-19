@@ -48,7 +48,7 @@ def generate_list():
     val_num = int(total_num * TEST_RATE)
     val_num_list = random.sample(range(total_num), val_num)
     train_tfr_list = [os.path.join(TFR_PATH, path)
-                     for i, path in enumerate(tfr_list) if i not in val_num_list]
+                      for i, path in enumerate(tfr_list) if i not in val_num_list]
     val_tfr_list = [os.path.join(TFR_PATH, path)
                     for i, path in enumerate(tfr_list) if i in val_num_list]
     test_tfr_list = [os.path.join(TEST_TFR_PATH, path)
@@ -61,6 +61,7 @@ def main():
     # transfer_to_tfr(dm)
     train_tfr_list, val_tfr_list, test_tfr_list = generate_list()
     net = ResNet_v2()
+    net.load(os.path.join('log/summary_Jul_19_12_25_05_2018/model/model'))
     train(net, train_tfr_list, val_tfr_list)
     test(net, test_tfr_list)
 
