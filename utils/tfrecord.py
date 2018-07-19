@@ -28,6 +28,9 @@ def generate_dataset(files_list, batch_size,
         dataset = dataset.repeat(repeat_time)
     if batch:
         dataset = dataset.batch(batch_size)
+    else:
+        dataset = dataset.batch(1000)
+
     iterator = dataset.make_initializable_iterator()
     next_batch = iterator.get_next()
     example = tf.parse_example(

@@ -61,7 +61,7 @@ def main():
     # transfer_to_tfr(dm)
     train_tfr_list, val_tfr_list, test_tfr_list = generate_list()
     net = ResNet_v2()
-    net.load(os.path.join('log/summary_Jul_19_12_25_05_2018/model/model'))
+    # net.load(os.path.join('log/summary_Jul_19_12_25_05_2018/model/model'))
     train(net, train_tfr_list, val_tfr_list)
     test(net, test_tfr_list)
 

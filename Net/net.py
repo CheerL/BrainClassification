@@ -19,15 +19,16 @@ class Block(collections.namedtuple('Block', ['scope', 'unit_fn', 'is_first', 'ar
 
 class Net(object):
     def __init__(self, class_num=CLASS_NUM):
-        config = tf.ConfigProto()
-        config.gpu_options.per_process_gpu_memory_fraction = 1.0
-        config.gpu_options.allow_growth = True
+        net_config = tf.ConfigProto()
+        net_config.gpu_options.per_process_gpu_memory_fraction = 1.0
+        net_config.gpu_options.allow_growth = True
+        # net_config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
 
         self.__loaded = False
         self.logger = Logger('net')
         self.class_num = class_num
         self.graph = tf.Graph()
-        self.sess = tf.Session(graph=self.graph, config=config)
+        self.sess = tf.Session(graph=self.graph, config=net_config)
         with self.graph.as_default():
             self.img = tf.placeholder(
                 tf.float32, [None, SIZE, SIZE, MOD_NUM], name='img')
@@ -100,7 +101,7 @@ class Net(object):
                                 self.label: label
                             })
                         self.writer.add_summary(summary, train_step)
-                        self.logger.info('Save training summary %d, accuracy: %f, loss %f' % (
+                        self.logger.info('Training summary %d, accuracy: %f, loss %f' % (
                             train_step, accuracy, loss))
                 except tf.errors.OutOfRangeError:
                     break
@@ -118,20 +119,22 @@ class Net(object):
             iterator, next_batch = generate_dataset(
                 [tfr_name], batch_size, train=False, shuffle=False, batch=False)
             self.sess.run(iterator.initializer)
+            predict_list = np.array([], dtype=np.float32)
             while True:
                 try:
                     img, _ = self.sess.run(next_batch)
                     predict = self.predict(img)
-                    predict_list = predict.argmax(axis=1)
+                    predict_list = np.concatenate(
+                        [predict_list, predict.argmax(axis=1)])
                 except tf.errors.OutOfRangeError:
                     break
             self.logger.info('Prediction end')
             return predict_list
 
-    def validate(self, file_list, batch_size=VAL_BATCH_SIZE, test=False):
+    def validate(self, file_list, batch_size=VAL_BATCH_SIZE, test=False, shuffle=True, batch=True):
         with self.graph.as_default():
             iterator, next_batch = generate_dataset(
-                file_list, batch_size, train=False)
+                file_list, batch_size, train=False, shuffle=shuffle, batch=batch)
             val_step_initer = tf.variables_initializer([self.val_step])
             self.sess.run([iterator.initializer, val_step_initer])
             label_list = np.array([], dtype=np.float32)
@@ -165,11 +168,21 @@ class Net(object):
             predict_list[predict_list < 0.5] = 0
             true_list = predict_list[label_list == 0]       # tumor result
             false_list = predict_list[label_list == 1]      # normal result
-            
-            fn_rate = true_list.sum() / len(true_list)      # t -> f
-            tp_rate = 1 - fn_rate                           # t -> t
-            tn_rate = false_list.sum() / len(false_list)    # f -> f
-            fp_rate = 1 - tn_rate                           # f -> t
+            if len(true_list) and len(false_list):
+                fn_rate = true_list.sum() / len(true_list)      # t -> f
+                tp_rate = 1 - fn_rate                           # t -> t
+                tn_rate = false_list.sum() / len(false_list)    # f -> f
+                fp_rate = 1 - tn_rate                           # f -> t
+            elif len(true_list) is 0:
+                tn_rate = false_list.sum() / len(false_list)    # f -> f
+                fp_rate = 1 - tn_rate                           # f -> t
+                fn_rate = 0.0
+                tp_rate = 0.0
+            elif len(false_list) is 0:
+                fn_rate = true_list.sum() / len(true_list)      # t -> f
+                tp_rate = 1 - fn_rate                           # t -> t
+                fn_rate = 0.0
+                tp_rate = 0.0
             avg_accuracy = sum(acc_list) / len(acc_list)
             train_step = self.sess.run(self.train_step)
             result = '(train step %d) Average accuary %f, TP %f, TN %f, FP %f, FN %f' % (

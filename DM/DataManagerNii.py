@@ -6,7 +6,7 @@ import numpy as np
 import SimpleITK as sitk
 from tqdm import tqdm
 
-from config import TEST_TFR_PATH, TFR_PATH, Ref
+from config import NONEMPTY_AREA_RATE, TEST_TFR_PATH, TFR_PATH, Ref
 from DM.DataManager import DataManager
 from utils.tfrecord import generate_example, generate_writer
 
@@ -123,7 +123,7 @@ class DataManagerNii(DataManager):
             for i, label in enumerate(data['label']):
                 base_img = data[self.mods[0]][i]
 
-                if len(base_img[base_img > 0]) / Ref.square > 0.2:
+                if len(base_img[base_img > 0]) / Ref.square > NONEMPTY_AREA_RATE:
                     img = np.stack([data[mod][i] for mod in self.mods], axis=2)
                     example = generate_example(img, label)
                     tfr_writer.write(example.SerializeToString())
