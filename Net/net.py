@@ -168,17 +168,17 @@ class Net(object):
             predict_list[predict_list < 0.5] = 0
             true_list = predict_list[label_list == 0]       # tumor result
             false_list = predict_list[label_list == 1]      # normal result
-            if len(true_list) and len(false_list):
+            if true_list.size and false_list.size:
                 fn_rate = true_list.sum() / len(true_list)      # t -> f
                 tp_rate = 1 - fn_rate                           # t -> t
                 tn_rate = false_list.sum() / len(false_list)    # f -> f
                 fp_rate = 1 - tn_rate                           # f -> t
-            elif len(true_list) is 0:
+            elif not true_list.size:
                 tn_rate = false_list.sum() / len(false_list)    # f -> f
                 fp_rate = 1 - tn_rate                           # f -> t
                 fn_rate = 0.0
                 tp_rate = 0.0
-            elif len(false_list) is 0:
+            elif not false_list.size:
                 fn_rate = true_list.sum() / len(true_list)      # t -> f
                 tp_rate = 1 - fn_rate                           # t -> t
                 fn_rate = 0.0
