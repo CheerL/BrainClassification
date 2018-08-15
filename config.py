@@ -7,11 +7,13 @@ ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(ROOT_PATH, 'data')
 TFR_PATH = os.path.join(DATA_PATH, 'tfrecord')
 TEST_TFR_PATH = os.path.join(DATA_PATH, 'tfr_test')
+TRAIN_TFR_PATH = os.path.join(DATA_PATH, 'tfr_train')
+VAL_TFR_PATH = os.path.join(DATA_PATH, 'tfr_val')
 SUMMARY_PATH = os.path.join(ROOT_PATH, 'log', 'summary_%s' % run_time)
 MODEL_PATH = os.path.join(SUMMARY_PATH, 'model')
 LOG_PATH = SUMMARY_PATH
 
-NONEMPTY_AREA_RATE = 0.1
+NONEMPTY_AREA_RATE = 0.15
 CLASS_NUM = 2
 SIZE = 240
 MODS = ['t1']
@@ -34,7 +36,7 @@ BATCH_NORM_SCALE = True
 
 TEST_RATE = 0.1
 VAL_RATE = 0.1
-REPEAT_NUM = 5
+REPEAT_NUM = 10
 SUMMARY_INTERVAL = 50
 VAL_INTERVAL = 500
 VAL_BATCH_SIZE = 32

@@ -1,58 +1,58 @@
 import os
 import random
+import shutil
 
-from config import TEST_TFR_PATH, TFR_PATH, TEST_RATE
+from config import TEST_TFR_PATH, TRAIN_TFR_PATH, VAL_TFR_PATH, TFR_PATH, TEST_RATE, VAL_RATE
 from DM.DataManagerNii import DataManagerNii as DMN
 from Net.resnet import ResNet, ResNet_v2
 
 
-def transfer_to_tfr(dm=None):
-    if dm is None:
-        dm = DMN()
-
+def transfer_to_tfr(dm):
     dm.create_file_list()
-    dm.load_image()
-    dm.load_label()
-    dm.numpy_data = dm.get_numpy_data()
-    dm.write_tfrecord()
-
-
-def train(net=None, train_tfr_list=None, val_tfr_list=None, dm=None):
-    if train_tfr_list is None:
-        if dm is None:
-            dm = DMN()
-
+    file_list = dm.file_list
+    for i in range(0, len(file_list), 150):
+        dm.file_list = file_list[i*150:(i+1)*150]
+        dm.load_image()
+        dm.load_label()
+        dm.numpy_data = dm.get_numpy_data()
+        dm.write_tfrecord(clear=False)
         dm.clear_data()
-        if not dm.train_list:
-            dm.split_data()
-        train_tfr_list = dm.get_tfrecord_path(dm.train_list)
-        val_tfr_list = dm.get_tfrecord_path(dm.val_list)
 
-    if net is None:
-        net = ResNet()
 
+def train(net, train_tfr_list, val_tfr_list):
     net.train(train_tfr_list, val_tfr_list)
     net.save('model')
 
 
-def test(net, test_tfr_list=None):
-    if test_tfr_list is None:
-        test_tfr_list = generate_list()[2]
-
+def test(net, test_tfr_list):
     net.validate(test_tfr_list, test=True)
 
 
 def generate_list():
-    tfr_list = os.listdir(TFR_PATH)
-    total_num = len(tfr_list)
-    val_num = int(total_num * TEST_RATE)
-    val_num_list = random.sample(range(total_num), val_num)
-    train_tfr_list = [os.path.join(TFR_PATH, path)
-                      for i, path in enumerate(tfr_list) if i not in val_num_list]
-    val_tfr_list = [os.path.join(TFR_PATH, path)
-                    for i, path in enumerate(tfr_list) if i in val_num_list]
-    test_tfr_list = [os.path.join(TEST_TFR_PATH, path)
-                     for path in os.listdir(TEST_TFR_PATH)]
+    if not (os.listdir(TRAIN_TFR_PATH) and os.listdir(TEST_TFR_PATH) and os.listdir(VAL_TFR_PATH)):
+        tfr_list = os.listdir(TFR_PATH)
+        total_num = len(tfr_list)
+        train_num_list = set(range(total_num))
+        test_num = int(total_num * TEST_RATE)
+        test_num_list = random.sample(train_num_list, test_num)
+        train_num_list = train_num_list.difference(set(test_num_list))
+        val_num = int(total_num * (1 - TEST_RATE) * VAL_RATE)
+        val_num_list = random.sample(train_num_list, val_num)
+        train_num_list = list(train_num_list.difference(set(val_num_list)))
+        train_tfr_list = [path for i, path in enumerate(tfr_list) if i in train_num_list]
+        test_tfr_list = [path for i, path in enumerate(tfr_list) if i in test_num_list]
+        val_tfr_list = [path for i, path in enumerate(tfr_list) if i in val_num_list]
+        
+        for path in train_tfr_list:
+            shutil.copyfile(os.path.join(TFR_PATH, path), os.path.join(TRAIN_TFR_PATH, path))
+        for path in test_tfr_list:
+            shutil.copyfile(os.path.join(TFR_PATH, path), os.path.join(TEST_TFR_PATH, path))
+        for path in val_tfr_list:
+            shutil.copyfile(os.path.join(TFR_PATH, path), os.path.join(VAL_TFR_PATH, path))
+        
+    train_tfr_list = [os.path.join(TRAIN_TFR_PATH, path) for path in os.listdir(TRAIN_TFR_PATH) if 'tfrecord' in path]
+    test_tfr_list = [os.path.join(TEST_TFR_PATH, path) for path in os.listdir(TEST_TFR_PATH) if 'tfrecord' in path]
+    val_tfr_list = [os.path.join(VAL_TFR_PATH, path) for path in os.listdir(VAL_TFR_PATH) if 'tfrecord' in path]
     return train_tfr_list, val_tfr_list, test_tfr_list
 
 
@@ -61,7 +61,7 @@ def main():
     # transfer_to_tfr(dm)
     train_tfr_list, val_tfr_list, test_tfr_list = generate_list()
     net = ResNet_v2()
-    # net.load(os.path.join('log/summary_Jul_19_12_25_05_2018/model/model'))
+#     net.load('log/summary_Aug_14_21_48_30_2018/model/model')
     train(net, train_tfr_list, val_tfr_list)
     test(net, test_tfr_list)
 
