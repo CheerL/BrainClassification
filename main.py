@@ -39,20 +39,29 @@ def generate_list():
         val_num = int(total_num * (1 - TEST_RATE) * VAL_RATE)
         val_num_list = random.sample(train_num_list, val_num)
         train_num_list = list(train_num_list.difference(set(val_num_list)))
-        train_tfr_list = [path for i, path in enumerate(tfr_list) if i in train_num_list]
-        test_tfr_list = [path for i, path in enumerate(tfr_list) if i in test_num_list]
-        val_tfr_list = [path for i, path in enumerate(tfr_list) if i in val_num_list]
-        
+        train_tfr_list = [path for i, path in enumerate(
+            tfr_list) if i in train_num_list]
+        test_tfr_list = [path for i, path in enumerate(
+            tfr_list) if i in test_num_list]
+        val_tfr_list = [path for i, path in enumerate(
+            tfr_list) if i in val_num_list]
+
         for path in train_tfr_list:
-            shutil.copyfile(os.path.join(TFR_PATH, path), os.path.join(TRAIN_TFR_PATH, path))
+            shutil.copyfile(os.path.join(TFR_PATH, path),
+                            os.path.join(TRAIN_TFR_PATH, path))
         for path in test_tfr_list:
-            shutil.copyfile(os.path.join(TFR_PATH, path), os.path.join(TEST_TFR_PATH, path))
+            shutil.copyfile(os.path.join(TFR_PATH, path),
+                            os.path.join(TEST_TFR_PATH, path))
         for path in val_tfr_list:
-            shutil.copyfile(os.path.join(TFR_PATH, path), os.path.join(VAL_TFR_PATH, path))
-        
-    train_tfr_list = [os.path.join(TRAIN_TFR_PATH, path) for path in os.listdir(TRAIN_TFR_PATH) if 'tfrecord' in path]
-    test_tfr_list = [os.path.join(TEST_TFR_PATH, path) for path in os.listdir(TEST_TFR_PATH) if 'tfrecord' in path]
-    val_tfr_list = [os.path.join(VAL_TFR_PATH, path) for path in os.listdir(VAL_TFR_PATH) if 'tfrecord' in path]
+            shutil.copyfile(os.path.join(TFR_PATH, path),
+                            os.path.join(VAL_TFR_PATH, path))
+
+    train_tfr_list = [os.path.join(TRAIN_TFR_PATH, path) for path in os.listdir(
+        TRAIN_TFR_PATH) if 'tfrecord' in path]
+    test_tfr_list = [os.path.join(TEST_TFR_PATH, path) for path in os.listdir(
+        TEST_TFR_PATH) if 'tfrecord' in path]
+    val_tfr_list = [os.path.join(VAL_TFR_PATH, path) for path in os.listdir(
+        VAL_TFR_PATH) if 'tfrecord' in path]
     return train_tfr_list, val_tfr_list, test_tfr_list
 
 
@@ -61,7 +70,7 @@ def main():
     # transfer_to_tfr(dm)
     train_tfr_list, val_tfr_list, test_tfr_list = generate_list()
     net = ResNet_v2()
-#     net.load('log/summary_Aug_14_21_48_30_2018/model/model')
+    net.load('log/summary_Aug_16_10_01_01_2018/model/model')
     train(net, train_tfr_list, val_tfr_list)
     test(net, test_tfr_list)
 
