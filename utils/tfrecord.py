@@ -27,7 +27,7 @@ def generate_dataset(files_list, batch_size,
     if train:
         dataset = dataset.repeat(repeat_time)
     if batch:
-        dataset = dataset.batch(batch_size)
+        dataset = dataset.batch(batch_size, True)
     else:
         dataset = dataset.batch(1000)
 

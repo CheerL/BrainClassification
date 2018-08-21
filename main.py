@@ -11,7 +11,7 @@ def transfer_to_tfr(dm):
     dm.create_file_list()
     file_list = dm.file_list
     for i in range(0, len(file_list), 150):
-        dm.file_list = file_list[i*150:(i+1)*150]
+        dm.file_list = file_list[i:i+150]
         dm.load_image()
         dm.load_label()
         dm.numpy_data = dm.get_numpy_data()
@@ -70,7 +70,7 @@ def main():
     # transfer_to_tfr(dm)
     train_tfr_list, val_tfr_list, test_tfr_list = generate_list()
     net = ResNet_v2()
-    net.load('log/summary_Aug_16_10_01_01_2018/model/model')
+    # net.load('log/summary_Aug_16_18_02_09_2018/model/model')
     train(net, train_tfr_list, val_tfr_list)
     test(net, test_tfr_list)
 

@@ -6,7 +6,7 @@ name = "pypi"
 [packages]
 simpleitk = "*"
 tqdm = "*"
-tensorflow = "*"
+tensorflow-gpu = "*"
 numpy = "==1.14.5"
 
 [dev-packages]
