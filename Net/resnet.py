@@ -277,16 +277,35 @@ class ResNet_v2(Net):
                 return worker_device_spec.to_string()
         return device_chooser
 
+    def data_split(self, img, label, batch_size=BATCH_SIZE):
+        with tf.device('/cpu:0'), tf.variable_scope('data_split'):
+            if self.num_gpu <= 1:
+                # No GPU available or only 1 GPU.
+                return [img], [label]
+
+            gap = batch_size // self.num_gpu
+            with tf.variable_scope('img_split'):
+                img_batch = tf.unstack(img, num=batch_size, axis=0)
+                img_shards = [img_batch[i*gap:(i+1)*gap]
+                              for i in range(self.num_gpu)]
+                img_shards[self.num_gpu-1].extend(img_batch[self.num_gpu*gap:])
+                img_shards = [tf.parallel_stack(x) for x in img_shards]
+            with tf.variable_scope('label_split'):
+                label_batch = tf.unstack(label, num=batch_size, axis=0)
+                label_shards = [
+                    label_batch[i*gap:(i+1)*gap] for i in range(self.num_gpu)]
+                label_shards[self.num_gpu -
+                             1].extend(label_batch[self.num_gpu*gap:])
+                label_shards = [tf.parallel_stack(x) for x in label_shards]
+            return img_shards, label_shards
+
     def build(self):
         with tf.variable_scope('resnet_main'):
-            if self.num_gpu > 0:
-                img_shards, label_shards = self.data_split(self.img, self.label)
-                for i in range(self.num_gpu):
-                    self.build_tower(img_shards[i], label_shards[i], i)
-            else:
-                self.build_tower(self.img, self.label, 0)
+            num_device = self.num_gpu if self.num_gpu is not 0 else 1
+            img_shards, label_shards = self.data_split(self.img, self.label)
+            for i in range(num_device):
+                self.build_tower(img_shards[i], label_shards[i], i)
             self.build_trainer()
-
 
     def build_tower(self, inputs, label, tower_id, training=True):
         worker_device = '/{}:{}'.format(self.device_type, tower_id)
@@ -338,13 +357,14 @@ class ResNet_v2(Net):
                         # ResNet does an Average Pooling layer over pool_size,
                         # but that is the same as doing a reduce_mean. We do a reduce_mean
                         # here because it performs better than AveragePooling2D.
-                        axes = [2, 3] if self.data_format == 'channels_first' else [1, 2]
+                        axes = [2, 3] if self.data_format == 'channels_first' else [
+                            1, 2]
                         net = tf.reduce_mean(net, axes, keepdims=True)
                         net = tf.identity(net, 'final_reduce_mean')
                         net = tf.layers.flatten(net, 'flatten')
                         net = tf.layers.dense(inputs=net, units=self.class_num)
                         net = tf.identity(net, 'final_dense')
-                    
+
                     with tf.variable_scope('result'):
                         logits = tf.cast(net, tf.float32, 'logits')
 
@@ -353,16 +373,17 @@ class ResNet_v2(Net):
                             tf.equal(tf.argmax(logits, 1), tf.argmax(label, 1)), tf.float32))
 
                         # Calculate loss, which includes softmax cross entropy and L2 regularization.
-                        cross_entropy = tf.losses.softmax_cross_entropy(label, logits)
+                        cross_entropy = tf.losses.softmax_cross_entropy(
+                            label, logits)
                         tf.identity(cross_entropy, name='cross_entropy')
                         # Add weight decay to the loss.
                         l2_loss = CONV_WEIGHT_DECAY * tf.add_n(
                             [tf.nn.l2_loss(tf.cast(v, tf.float32)) for v in tf.trainable_variables()
-                            if self.exclude_batch_norm(v.name)])
+                             if self.exclude_batch_norm(v.name)])
                         loss = {
-                            'l2_loss':l2_loss,
-                            'cross_entropy':cross_entropy,
-                            'loss':l2_loss + cross_entropy
+                            'l2_loss': l2_loss,
+                            'cross_entropy': cross_entropy,
+                            'loss': l2_loss + cross_entropy
                         }
                         model_params = tf.trainable_variables()
                         grad = tf.gradients(loss['loss'], model_params)
@@ -377,35 +398,8 @@ class ResNet_v2(Net):
                             # towers but these stats accumulate extremely fast so we can
                             # ignore the other stats from the other towers without
                             # significant detriment.
-                            self.update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, name_scope)
-
-
-    def data_split(self, img, label, batch_size=BATCH_SIZE):
-        with tf.device('/cpu:0'), tf.variable_scope('data_split'):
-            if self.num_gpu <= 1:
-                # No GPU available or only 1 GPU.
-                return [img], [label]
-
-            # Note that passing num=batch_size is safe here, even though
-            # dataset.batch(batch_size) can, in some cases, return fewer than batch_size
-            # examples. This is because it does so only when repeating for a limited
-            # number of epochs, but our dataset repeats forever.
-            img_shards = [[] for i in range(self.num_gpu)]
-            label_shards = [[] for i in range(self.num_gpu)]
-
-            with tf.variable_scope('img_split'):
-                img_batch = tf.unstack(img, num=batch_size, axis=0)
-                for i, img_slice in enumerate(img_batch):
-                    idx = i % self.num_gpu
-                    img_shards[idx].append(img_slice)
-                img_shards = [tf.parallel_stack(x) for x in img_shards]
-            with tf.variable_scope('label_split'):
-                label_batch = tf.unstack(label, num=batch_size, axis=0)
-                for i, label_slice in enumerate(label_batch):
-                    idx = i % self.num_gpu
-                    label_shards[idx].append(label_slice)
-                label_shards = [tf.parallel_stack(x) for x in label_shards]
-            return img_shards, label_shards
+                            self.update_ops = tf.get_collection(
+                                tf.GraphKeys.UPDATE_OPS, name_scope)
 
     def build_trainer(self):
         with tf.variable_scope('train_net'):
@@ -433,14 +427,18 @@ class ResNet_v2(Net):
                 optimizer = tf.train.MomentumOptimizer(learning_rate, MOMENTUM)
 
                 train_op = [
-                        optimizer.apply_gradients(gradvars, global_step=self.train_step)
-                    ]
+                    optimizer.apply_gradients(
+                        gradvars, global_step=self.train_step)
+                ]
                 train_op.extend(self.update_ops)
                 self.trainer = tf.group(*train_op)
 
-                cross_entropy = tf.reduce_mean([loss['cross_entropy'] for loss in self.tower_loss])
-                l2_loss = tf.reduce_mean([loss['l2_loss'] for loss in self.tower_loss])
-                self.loss = tf.reduce_mean([loss['loss'] for loss in self.tower_loss])
+                cross_entropy = tf.reduce_mean(
+                    [loss['cross_entropy'] for loss in self.tower_loss])
+                l2_loss = tf.reduce_mean([loss['l2_loss']
+                                          for loss in self.tower_loss])
+                self.loss = tf.reduce_mean(
+                    [loss['loss'] for loss in self.tower_loss])
                 self.accuracy = tf.reduce_mean(self.tower_accuracy)
                 self.prediction = tf.concat(self.tower_preds, axis=0)
                 # self.trainer = tf.train.MomentumOptimizer(learning_rate, MOMENTUM).minimize(

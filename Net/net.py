@@ -86,7 +86,8 @@ class Net(object):
         with self.graph.as_default():
             self.start()
             self.logger.info('Train start')
-            iterator, next_batch = generate_dataset(file_list, batch_size, repeat_time=repeat_time)
+            iterator, next_batch = generate_dataset(
+                file_list, batch_size, repeat_time=repeat_time)
             self.sess.run(iterator.initializer)
             while True:
                 try:
@@ -140,7 +141,8 @@ class Net(object):
                     img, label = self.sess.run(next_batch)
                     predict = self.predict(img).argmax(axis=1)
                     label = label.argmax(axis=1)
-                    tfr_predict_list = np.concatenate([tfr_predict_list, predict])
+                    tfr_predict_list = np.concatenate(
+                        [tfr_predict_list, predict])
                     tfr_label_list = np.concatenate([tfr_label_list, label])
                 except tf.errors.OutOfRangeError:
                     break
@@ -221,7 +223,8 @@ class Net(object):
                     tf.assign(self.val_data['fp'], fp_rate),
                     tf.assign(self.val_data['fn'], fn_rate)
                 ])
-                self.writer.add_summary(self.sess.run(self.val_summary), train_step)
+                self.writer.add_summary(
+                    self.sess.run(self.val_summary), train_step)
 
             return predict_list, label_list
 
@@ -243,8 +246,10 @@ class Net(object):
                         img, label = self.sess.run(next_batch)
                         predict = self.predict(img).argmax(axis=1)
                         label = label.argmax(axis=1)
-                        tfr_predict_list = np.concatenate([tfr_predict_list, predict])
-                        tfr_label_list = np.concatenate([tfr_label_list, label])
+                        tfr_predict_list = np.concatenate(
+                            [tfr_predict_list, predict])
+                        tfr_label_list = np.concatenate(
+                            [tfr_label_list, label])
                     except tf.errors.OutOfRangeError:
                         break
 
@@ -297,10 +302,10 @@ class Net(object):
                     tf.assign(self.val_data['fp'], fp_rate),
                     tf.assign(self.val_data['fn'], fn_rate)
                 ])
-                self.writer.add_summary(self.sess.run(self.val_summary), train_step)
+                self.writer.add_summary(
+                    self.sess.run(self.val_summary), train_step)
 
             return predict_list, label_list
-
 
     def save(self, model_name):
         model_path = os.path.join(MODEL_PATH, model_name)
@@ -309,6 +314,7 @@ class Net(object):
     def load(self, model_path):
         self.saver.restore(self.sess, model_path)
         self.__loaded = True
+
 
 if __name__ == '__main__':
     pass
