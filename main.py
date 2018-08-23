@@ -7,11 +7,11 @@ from DM.DataManagerNii import DataManagerNii as DMN
 from Net.resnet import ResNet, ResNet_v2
 
 
-def transfer_to_tfr(dm):
+def transfer_to_tfr(dm, batch_size=200):
     dm.create_file_list()
     file_list = dm.file_list
-    for i in range(0, len(file_list), 150):
-        dm.file_list = file_list[i:i+150]
+    for i in range(0, len(file_list), batch_size):
+        dm.file_list = file_list[i:i+batch_size]
         dm.load_image()
         dm.load_label()
         dm.numpy_data = dm.get_numpy_data()

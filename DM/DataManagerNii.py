@@ -129,17 +129,27 @@ class DataManagerNii(DataManager):
                 os.remove(os.path.join(TFR_PATH, file))
 
         for name, data in self.numpy_data.items():
+            examples = []
+
+            for times in range(3):
+                limit = Ref.square * NONEMPTY_AREA_RATE * (0.95 ** times)
+                for i, label in enumerate(data['label']):
+                    base_img = data[self.mods[0]][i]
+                    if len(base_img[base_img > 0]) > limit:
+                        img = np.stack([data[mod][i] / data[mod][i].max() for mod in self.mods], axis=2)
+                        examples.append(generate_example(img, label))
+                if examples:
+                    break
+            else:
+                print('%s is too small' % name)
+                continue
+
             tfr_name = os.path.join(TFR_PATH, '%s.tfrecord' % name)
             tfr_writer = generate_writer(tfr_name)
-            for i, label in enumerate(data['label']):
-                base_img = data[self.mods[0]][i]
-
-                if len(base_img[base_img > 0]) / Ref.square > NONEMPTY_AREA_RATE:
-                    img = np.stack([data[mod][i] / data[mod][i].max() for mod in self.mods], axis=2)
-                    example = generate_example(img, label)
-                    tfr_writer.write(example.SerializeToString())
+            for example in examples:
+                tfr_writer.write(example.SerializeToString())
             tfr_writer.close()
-
+            print('Write %d images to %s, %d' % (len(examples), tfr_name, times))
 
 if __name__ == '__main__':
     pass
