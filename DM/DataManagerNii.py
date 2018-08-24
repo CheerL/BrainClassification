@@ -117,10 +117,10 @@ class DataManagerNii(DataManager):
     def get_label(self, data):
         numpy_data = sitk.GetArrayFromImage(data)
         # self.dim = numpy_data.shape.index(min(numpy_data.shape))
-        ture_label = numpy_data.sum(axis=self.left_dim).astype(
+        tumor_label = numpy_data.sum(axis=self.left_dim).astype(
             np.bool).astype(np.float32)
-        false_label = 1 - ture_label
-        label = np.stack([ture_label, false_label], axis=1)
+        normal_label = 1 - tumor_label
+        label = np.stack([normal_label, tumor_label], axis=1)
         return label
 
     def write_tfrecord(self, clear=True):

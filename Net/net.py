@@ -6,17 +6,13 @@ import tensorflow as tf
 from tensorflow.contrib import slim
 
 from config import (BATCH_SIZE, CLASS_NUM, REPEAT_NUM, MOD_NUM, LOG_PATH, MIN_CONNECT_TUMOR_NUM,
-                    MODEL_PATH, SIZE, SUMMARY_INTERVAL, VAL_INTERVAL, MIN_TUMOR_NUM)
+                    MODEL_PATH, SIZE, SUMMARY_INTERVAL, VAL_INTERVAL, MIN_TUMOR_NUM, WHOLE_REPEAT_NUM)
 from utils.logger import Logger
 from utils.tfrecord import generate_dataset
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 # os.environ['TF_SYNC_ON_FINISH'] = '0'
 # os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
-
-
-class Block(collections.namedtuple('Block', ['scope', 'unit_fn', 'is_first', 'args'])):
-    'A named tuple describing a ResNet block'
 
 
 class Net(object):
@@ -86,16 +82,18 @@ class Net(object):
         with self.graph.as_default():
             self.start()
             self.logger.info('Train start')
-            iterator, next_batch = generate_dataset(
+            _, next_batch = generate_dataset(
                 file_list, batch_size, repeat_time=repeat_time)
-            self.sess.run(iterator.initializer)
             while True:
                 try:
                     img, label = self.sess.run(next_batch)
-                    [_, train_step] = self.sess.run(
+                    _, train_step, summary, accuracy, loss = self.sess.run(
                         fetches=[
                             self.trainer,
-                            self.train_step
+                            self.train_step,
+                            self.summary,
+                            self.accuracy,
+                            self.loss
                         ],
                         feed_dict={
                             self.img: img,
@@ -105,16 +103,6 @@ class Net(object):
                     if train_step % val_interval == 0:
                         self.validate(val_file_list, val_batch_size)
                     elif train_step % summary_interval == 0:
-                        summary, accuracy, loss = self.sess.run(
-                            fetches=[
-                                self.summary,
-                                self.accuracy,
-                                self.loss
-                            ],
-                            feed_dict={
-                                self.img: img,
-                                self.label: label
-                            })
                         self.writer.add_summary(summary, train_step)
                         self.logger.info('Training summary %d, accuracy: %f, loss %f' % (
                             train_step, accuracy, loss))
@@ -131,37 +119,100 @@ class Net(object):
 
     def whole_predict(self, tfr_name, batch_size=BATCH_SIZE, with_label=True):
         with self.graph.as_default():
-            iterator, next_batch = generate_dataset(
-                [tfr_name], batch_size, train=False, shuffle=False, batch=True)
-            self.sess.run(iterator.initializer)
-            tfr_label_list = np.array([], dtype=np.float32)
-            tfr_predict_list = np.array([], dtype=np.float32)
-            while True:
-                try:
-                    img, label = self.sess.run(next_batch)
-                    predict = self.predict(img).argmax(axis=1)
-                    label = label.argmax(axis=1)
-                    tfr_predict_list = np.concatenate(
-                        [tfr_predict_list, predict])
-                    tfr_label_list = np.concatenate([tfr_label_list, label])
-                except tf.errors.OutOfRangeError:
-                    break
-            self.logger.info('Prediction end')
+            _, next_batch = generate_dataset(
+                [tfr_name], None, train=False, shuffle=False, batch=False)
+            tfr_predict = []
+            tfr_imgs, tfr_labels = self.sess.run(next_batch)
+            tfr_size = len(tfr_labels)
+            rank = np.arange(tfr_size)
+            for _ in range(WHOLE_REPEAT_NUM):
+                rank_copy = rank.copy()
+                np.random.shuffle(rank_copy)
+                predict = []
+                for i in range(0, tfr_size, batch_size):
+                    imgs = tfr_imgs[rank_copy][i:i+batch_size]
+                    if len(imgs) < batch_size:
+                        imgs = np.concatenate(
+                            [imgs] * np.ceil(batch_size / len(imgs)
+                                             ).astype(int))[:batch_size]
+                    predict.append(self.predict(imgs))
+                predict = np.concatenate(predict)
+                pair = list(zip(predict, rank_copy))
+                pair.sort(key=lambda x: x[1])
+                tfr_predict.append(np.stack(np.array(pair).T[0]))
 
+            tfr_predict = np.array(tfr_predict).mean(axis=0).argmax(axis=1)
+
+            tfr_zero_predict_pos = np.where(tfr_predict == 0)[0]
+            for pos in tfr_zero_predict_pos:
+                if 0 < pos < tfr_predict.size - 1:
+                    if tfr_predict[pos - 1] == tfr_predict[pos + 1] == 1:
+                        tfr_predict[pos] = 1
+
+            tfr_one_predict_pos = np.where(tfr_predict == 1)[0]
+            for pos in tfr_one_predict_pos:
+                if 0 < pos < tfr_predict.size - 1:
+                    if tfr_predict[pos - 1] == tfr_predict[pos + 1] == 0:
+                        tfr_predict[pos] = 0
             if with_label:
-                return tfr_predict_list, tfr_label_list
+                return tfr_predict, tfr_labels.argmax(axis=1)
+            return tfr_predict
 
-            return tfr_predict_list
+    def validate_report(self, predict_list, label_list, test, tumor_as_1=True):
+        tumor_num, normal_num = int(tumor_as_1), int(not tumor_as_1)
+        tumor_list = predict_list[label_list ==
+                                  tumor_num]        # tumor result
+        normal_list = predict_list[label_list ==
+                                   normal_num]      # normal result
+        if tumor_list.size and normal_list.size:
+            tp_rate = (tumor_list == tumor_num).sum() / \
+                len(tumor_list)     # t -> f
+            fn_rate = 1 - tp_rate                                           # t -> t
+            tn_rate = (normal_list == normal_num).sum() / \
+                len(normal_list)        # f -> f
+            fp_rate = 1 - tn_rate                                           # f -> t
+        elif not tumor_list.size:
+            tn_rate = (normal_list == normal_num).sum() / \
+                len(normal_list)        # f -> f
+            fp_rate = 1 - tn_rate                                           # f -> t
+            fn_rate = 0.0
+            tp_rate = 0.0
+        elif not normal_list.size:
+            tp_rate = (tumor_list == tumor_num).sum() / \
+                len(tumor_list)     # t -> f
+            fn_rate = 1 - tp_rate                                           # t -> t
+            fp_rate = 0.0
+            tn_rate = 0.0
+        avg_accuracy = np.equal(predict_list, label_list).mean()
+        train_step = self.sess.run(self.train_step)
 
-    def validate(self, file_list, batch_size=BATCH_SIZE, test=False, shuffle=True, batch=True):
+        result = '(train step %d) Average accuary %f, TP %f, TN %f, FP %f, FN %f' % (
+            train_step, avg_accuracy, tp_rate, tn_rate, fp_rate, fn_rate)
+        self.logger.info('Validation end')
+        self.logger.info(result)
+
+        with open(os.path.join(LOG_PATH, 'result'), 'a+') as file:
+            file.write(result + '\n')
+
+        if not test:
+            self.sess.run([
+                tf.assign(self.val_data['avg_acc'], avg_accuracy),
+                tf.assign(self.val_data['tp'], tp_rate),
+                tf.assign(self.val_data['tn'], tn_rate),
+                tf.assign(self.val_data['fp'], fp_rate),
+                tf.assign(self.val_data['fn'], fn_rate)
+            ])
+            self.writer.add_summary(
+                self.sess.run(self.val_summary), train_step)
+
+    def validate(self, file_list, batch_size=BATCH_SIZE, test=False):
         with self.graph.as_default():
-            iterator, next_batch = generate_dataset(
-                file_list, batch_size, train=False, shuffle=shuffle, batch=batch)
+            _, next_batch = generate_dataset(
+                file_list, batch_size, train=False, shuffle=True, batch=True)
             val_step_initer = tf.variables_initializer([self.val_step])
-            self.sess.run([iterator.initializer, val_step_initer])
-            label_list = np.array([], dtype=np.float32)
-            predict_list = np.array([], dtype=np.float32)
-            acc_list = list()
+            self.sess.run(val_step_initer)
+            label_list = []
+            predict_list = []
             while True:
                 try:
                     img, label = self.sess.run(next_batch)
@@ -179,133 +230,38 @@ class Net(object):
                     if val_step % 10 == 0:
                         self.logger.info('Validation summary %d, accuracy: %f, loss: %f' % (
                             val_step, accuracy, loss))
-                    predict_list = np.concatenate(
-                        [predict_list, predict.argmax(axis=1)])
-                    label_list = np.concatenate(
-                        [label_list, label.argmax(axis=1)])
-                    acc_list.append(accuracy)
+                    predict_list.append(predict.argmax(axis=1))
+                    label_list.append(label.argmax(axis=1))
+
                 except tf.errors.OutOfRangeError:
                     break
-            predict_list[predict_list >= 0.5] = 1
-            predict_list[predict_list < 0.5] = 0
-            true_list = predict_list[label_list == 0]       # tumor result
-            false_list = predict_list[label_list == 1]      # normal result
-            if true_list.size and false_list.size:
-                fn_rate = true_list.sum() / len(true_list)      # t -> f
-                tp_rate = 1 - fn_rate                           # t -> t
-                tn_rate = false_list.sum() / len(false_list)    # f -> f
-                fp_rate = 1 - tn_rate                           # f -> t
-            elif not true_list.size:
-                tn_rate = false_list.sum() / len(false_list)    # f -> f
-                fp_rate = 1 - tn_rate                           # f -> t
-                fn_rate = 0.0
-                tp_rate = 0.0
-            elif not false_list.size:
-                fn_rate = true_list.sum() / len(true_list)      # t -> f
-                tp_rate = 1 - fn_rate                           # t -> t
-                fp_rate = 0.0
-                tn_rate = 0.0
-            avg_accuracy = sum(acc_list) / len(acc_list)
-            train_step = self.sess.run(self.train_step)
-            result = '(train step %d) Average accuary %f, TP %f, TN %f, FP %f, FN %f' % (
-                train_step, avg_accuracy, tp_rate, tn_rate, fp_rate, fn_rate)
-            self.logger.info('Validation end')
-            self.logger.info(result)
 
-            with open(os.path.join(LOG_PATH, 'result'), 'a+') as file:
-                file.write(result + '\n')
-
-            if not test:
-                self.sess.run([
-                    tf.assign(self.val_data['avg_acc'], avg_accuracy),
-                    tf.assign(self.val_data['tp'], tp_rate),
-                    tf.assign(self.val_data['tn'], tn_rate),
-                    tf.assign(self.val_data['fp'], fp_rate),
-                    tf.assign(self.val_data['fn'], fn_rate)
-                ])
-                self.writer.add_summary(
-                    self.sess.run(self.val_summary), train_step)
-
-            return predict_list, label_list
+            predict_list = np.concatenate(predict_list)
+            label_list = np.concatenate(label_list)
+            self.validate_report(predict_list, label_list,
+                                 test, tumor_as_1=True)
+        return predict_list, label_list
 
     def whole_validate(self, file_list, batch_size=BATCH_SIZE, test=False,
-                       min_tumor_num=MIN_TUMOR_NUM,
-                       min_connect_tumor_num=MIN_CONNECT_TUMOR_NUM):
+                       min_connect_tumor_num=MIN_CONNECT_TUMOR_NUM,
+                       min_tumor_num=MIN_TUMOR_NUM):
         with self.graph.as_default():
             file_num = len(file_list)
             label_list = np.zeros((file_num), dtype=np.int64)
             predict_list = np.zeros((file_num), dtype=np.int64)
-            for i, tfr in enumerate(file_list):
-                iterator, next_batch = generate_dataset(
-                    [tfr], batch_size, train=False, shuffle=False, batch=True)
-                self.sess.run(iterator.initializer)
-                tfr_label_list = np.array([], dtype=np.float32)
-                tfr_predict_list = np.array([], dtype=np.float32)
-                while True:
-                    try:
-                        img, label = self.sess.run(next_batch)
-                        predict = self.predict(img).argmax(axis=1)
-                        label = label.argmax(axis=1)
-                        tfr_predict_list = np.concatenate(
-                            [tfr_predict_list, predict])
-                        tfr_label_list = np.concatenate(
-                            [tfr_label_list, label])
-                    except tf.errors.OutOfRangeError:
-                        break
-
-                tfr_zero_predict_pos = np.where(tfr_predict_list == 0)[0]
-                for pos in tfr_zero_predict_pos:
-                    if 0 < pos < tfr_predict_list.size - 1:
-                        if tfr_predict_list[pos - 1] == tfr_predict_list[pos + 1] == 1:
-                            tfr_predict_list[pos] = 1
-
-                tfr_zero_predict_pos = np.where(tfr_predict_list == 0)[0]
+            for num, tfr_name in enumerate(file_list):
+                tfr_predict, tfr_labels = self.whole_predict(
+                    tfr_name, batch_size, with_label=True)
+                tfr_zero_predict_pos = np.where(tfr_predict == 0)[0]
                 if tfr_zero_predict_pos.size >= min_tumor_num:
-                    if 0 in np.convolve(tfr_predict_list, np.ones(min_connect_tumor_num), mode='same'):
-                        predict_list[i] = 1
-                if 0 in tfr_label_list:
-                    label_list[i] = 1
+                    if 0 in np.convolve(tfr_predict, np.ones(min_connect_tumor_num), mode='same'):
+                        predict_list[num] = 1
+                if 0 in tfr_labels:
+                    label_list[num] = 1
 
-            true_list = predict_list[label_list == 1]
-            false_list = predict_list[label_list == 0]
-            avg_accuracy = np.equal(predict_list, label_list).sum() / file_num
-            if true_list.size and false_list.size:
-                tp_rate = true_list.sum() / len(true_list)      # t -> f
-                fn_rate = 1 - tp_rate                           # t -> t
-                fp_rate = false_list.sum() / len(false_list)    # f -> f
-                tn_rate = 1 - fp_rate                           # f -> t
-            elif not true_list.size:
-                fp_rate = false_list.sum() / len(false_list)    # f -> f
-                tn_rate = 1 - fp_rate                           # f -> t
-                fn_rate = 0.0
-                tp_rate = 0.0
-            elif not false_list.size:
-                tp_rate = true_list.sum() / len(true_list)      # t -> f
-                fn_rate = 1 - tp_rate                           # t -> t
-                fp_rate = 0.0
-                tn_rate = 0.0
-
-            train_step = self.sess.run(self.train_step)
-            result = '(train step %d) Average accuary %f, TP %f, TN %f, FP %f, FN %f' % (
-                train_step, avg_accuracy, tp_rate, tn_rate, fp_rate, fn_rate)
-            self.logger.info('Validation end')
-            self.logger.info(result)
-
-            with open(os.path.join(LOG_PATH, 'result'), 'a+') as file:
-                file.write(result + '\n')
-
-            if not test:
-                self.sess.run([
-                    tf.assign(self.val_data['avg_acc'], avg_accuracy),
-                    tf.assign(self.val_data['tp'], tp_rate),
-                    tf.assign(self.val_data['tn'], tn_rate),
-                    tf.assign(self.val_data['fp'], fp_rate),
-                    tf.assign(self.val_data['fn'], fn_rate)
-                ])
-                self.writer.add_summary(
-                    self.sess.run(self.val_summary), train_step)
-
-            return predict_list, label_list
+            self.validate_report(predict_list, label_list,
+                                 test, tumor_as_1=True)
+        return predict_list, label_list
 
     def save(self, model_name):
         model_path = os.path.join(MODEL_PATH, model_name)
