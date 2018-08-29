@@ -1,6 +1,28 @@
+import random
+
 import tensorflow as tf
 
-from config import MOD_NUM, SIZE, CLASS_NUM
+from config import CLASS_NUM, MOD_NUM, REPEAT_NUM, SIZE
+
+
+def tfrecord_parse(example):
+    parsed_example = tf.parse_single_example(
+        serialized=example,
+        features={
+            'img': tf.FixedLenFeature([], tf.string),
+            'label': tf.FixedLenFeature([], tf.string),
+        }
+    )
+    img = tf.cast(
+        tf.reshape(tf.decode_raw(
+            parsed_example['img'], tf.float32), (SIZE, SIZE, MOD_NUM)),
+        tf.float32
+    )
+    label = tf.cast(
+        tf.decode_raw(parsed_example['label'], tf.float32),
+        tf.float32
+    )
+    return img, label
 
 
 def generate_example(img, label):
@@ -18,30 +40,21 @@ def generate_writer(path):
     return tf.python_io.TFRecordWriter(path)
 
 
-def generate_dataset(files_list, batch_size, verificate=False):
+def generate_dataset(files_list, batch_size, repeat_time=REPEAT_NUM,
+                     train=True, shuffle=True, batch=True):
+    if shuffle:
+        random.shuffle(files_list)
     dataset = tf.data.TFRecordDataset(files_list)
-    dataset = dataset.shuffle(100 * SIZE * SIZE)
-    if not verificate:
-        dataset = dataset.batch(batch_size)
+    dataset = dataset.map(tfrecord_parse)
+    if shuffle:
+        dataset = dataset.shuffle(len(files_list) * 500)
+    if train:
+        dataset = dataset.repeat(repeat_time)
+    if batch:
+        dataset = dataset.batch(batch_size, True)
     else:
-        dataset = dataset.batch(10 * SIZE * SIZE)
-    iterator = dataset.make_initializable_iterator()
+        dataset = dataset.batch(500)
+
+    iterator = dataset.make_one_shot_iterator()
     next_batch = iterator.get_next()
-    example = tf.parse_example(
-        next_batch,
-        features={
-            'img': tf.FixedLenFeature([], tf.string),
-            'label': tf.FixedLenFeature([], tf.string),
-        }
-    )
-    img = tf.cast(
-        tf.reshape(tf.decode_raw(
-            example['img'], tf.float32), (-1, SIZE, SIZE, MOD_NUM)),
-        tf.float32
-    )
-    label = tf.cast(
-        tf.reshape(tf.decode_raw(
-            example['label'], tf.float32), (-1, CLASS_NUM)),
-        tf.float32
-    )
-    return iterator, [img, label]
+    return iterator, next_batch
