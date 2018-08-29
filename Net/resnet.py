@@ -319,7 +319,7 @@ class ResNet_v2(Net):
                         else:
                             net = inputs
 
-                        net = self.conv2d_fixed_padding(
+                        net = self._conv2d_fixed_padding(
                             net, self.num_filters, self.kernel_size, self.conv_stride)
                         net = tf.identity(net, 'pre_conv')
 
@@ -328,7 +328,7 @@ class ResNet_v2(Net):
                         # for both the shortcut and non-shortcut paths as part of the first
                         # block's projection. Cf. Appendix of [2].
                         if self.resnet_version == 1:
-                            net = self.batch_norm(net, training)
+                            net = self._batch_norm(net, training)
                             net = tf.nn.relu(net)
 
                         if self.first_pool_size:
@@ -340,7 +340,7 @@ class ResNet_v2(Net):
 
                     for i, num_blocks in enumerate(self.block_sizes):
                         num_filters = self.num_filters * (2 ** i)
-                        net = self.block_layer(
+                        net = self._block_layer(
                             inputs=net, filters=num_filters, blocks=num_blocks,
                             strides=self.block_strides[i], training=training,
                             name='block_layer{}'.format(i + 1))
@@ -349,7 +349,7 @@ class ResNet_v2(Net):
                     # building/bottleneck block, eg resnet V2.
                     with tf.variable_scope('post_process'):
                         if self.pre_activation:
-                            net = self.batch_norm(net, training)
+                            net = self._batch_norm(net, training)
                             net = tf.nn.relu(net)
 
                         # The current top layer has shape
@@ -379,7 +379,7 @@ class ResNet_v2(Net):
                         # Add weight decay to the loss.
                         l2_loss = CONV_WEIGHT_DECAY * tf.add_n(
                             [tf.nn.l2_loss(tf.cast(v, tf.float32)) for v in tf.trainable_variables()
-                             if self.exclude_batch_norm(v.name)])
+                             if 'batch_normalization' not in v.name])
                         loss = {
                             'l2_loss': l2_loss,
                             'cross_entropy': cross_entropy,
@@ -458,10 +458,7 @@ class ResNet_v2(Net):
                     self.graph.get_collection(tf.GraphKeys.SUMMARIES))
                 self.writer = tf.summary.FileWriter(SUMMARY_PATH, self.graph)
 
-    def exclude_batch_norm(self, name):
-        return 'batch_normalization' not in name
-
-    def batch_norm(self, inputs, training):
+    def _batch_norm(self, inputs, training):
         """Performs a batch normalization using a standard set of parameters."""
         # We set fused=True for a significant performance boost. See
         # https://www.tensorflow.org/performance/performance_guide#common_fused_ops
@@ -470,7 +467,7 @@ class ResNet_v2(Net):
             momentum=BATCH_NORM_DECAY, epsilon=BATCH_NORM_EPSILON, center=True,
             scale=BATCH_NORM_SCALE, training=training, fused=True)
 
-    def fixed_padding(self, inputs, kernel_size):
+    def _fixed_padding(self, inputs, kernel_size):
         """Pads the input along the spatial dimensions independently of input size.
 
         Args:
@@ -495,22 +492,22 @@ class ResNet_v2(Net):
                                             [pad_beg, pad_end], [0, 0]])
         return padded_inputs
 
-    def conv2d_fixed_padding(self, inputs, filters, kernel_size, strides, name=None):
+    def _conv2d_fixed_padding(self, inputs, filters, kernel_size, strides, name=None):
         """Strided 2-D convolution with explicit padding."""
         # The padding is consistent and is based only on `kernel_size`, not on the
         # dimensions of `inputs` (as opposed to using `tf.layers.conv2d` alone).
         if strides > 1:
-            inputs = self.fixed_padding(inputs, kernel_size)
+            inputs = self._fixed_padding(inputs, kernel_size)
 
         return tf.layers.conv2d(
             inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
             padding=('SAME' if strides == 1 else 'VALID'), use_bias=False, data_format=self.data_format,
             kernel_initializer=tf.variance_scaling_initializer(), name=name)
 
-    def projection_shortcut(self, inputs, filters, strides):
+    def _projection_shortcut(self, inputs, filters, strides):
                 # Bottleneck blocks end with 4x the number of filters as they start with
         filters_out = filters * 4 if self.bottleneck else filters
-        return self.conv2d_fixed_padding(inputs, filters_out, 1, strides)
+        return self._conv2d_fixed_padding(inputs, filters_out, 1, strides)
 
     def _building_block_v1(self, inputs, filters, training, strides, is_pro_shortcut=False):
         """A single block for ResNet v1, without a bottleneck.
@@ -537,15 +534,15 @@ class ResNet_v2(Net):
         shortcut = inputs
 
         if is_pro_shortcut is not None:
-            shortcut = self.projection_shortcut(inputs, filters, strides)
-            shortcut = self.batch_norm(shortcut, training)
+            shortcut = self._projection_shortcut(inputs, filters, strides)
+            shortcut = self._batch_norm(shortcut, training)
 
-        inputs = self.conv2d_fixed_padding(inputs, filters, 3, strides)
-        inputs = self.batch_norm(inputs, training)
+        inputs = self._conv2d_fixed_padding(inputs, filters, 3, strides)
+        inputs = self._batch_norm(inputs, training)
         inputs = tf.nn.relu(inputs)
 
-        inputs = self.conv2d_fixed_padding(inputs, filters, 3, 1)
-        inputs = self.batch_norm(inputs, training)
+        inputs = self._conv2d_fixed_padding(inputs, filters, 3, 1)
+        inputs = self._batch_norm(inputs, training)
         inputs += shortcut
         inputs = tf.nn.relu(inputs)
 
@@ -575,19 +572,19 @@ class ResNet_v2(Net):
             The output tensor of the block; shape should match inputs.
         """
         shortcut = inputs
-        inputs = self.batch_norm(inputs, training)
+        inputs = self._batch_norm(inputs, training)
         inputs = tf.nn.relu(inputs)
 
         # The projection shortcut should come after the first batch norm and ReLU
         # since it performs a 1x1 convolution.
         if is_pro_shortcut is not None:
-            shortcut = self.projection_shortcut(inputs, filters, strides)
+            shortcut = self._projection_shortcut(inputs, filters, strides)
 
-        inputs = self.conv2d_fixed_padding(inputs, filters, 3, strides)
+        inputs = self._conv2d_fixed_padding(inputs, filters, 3, strides)
 
-        inputs = self.batch_norm(inputs, training)
+        inputs = self._batch_norm(inputs, training)
         inputs = tf.nn.relu(inputs)
-        inputs = self.conv2d_fixed_padding(inputs, filters, 3, 1)
+        inputs = self._conv2d_fixed_padding(inputs, filters, 3, 1)
 
         return inputs + shortcut
 
@@ -619,19 +616,19 @@ class ResNet_v2(Net):
         shortcut = inputs
 
         if is_pro_shortcut is not None:
-            shortcut = self.projection_shortcut(inputs, filters, strides)
-            shortcut = self.batch_norm(shortcut, training)
+            shortcut = self._projection_shortcut(inputs, filters, strides)
+            shortcut = self._batch_norm(shortcut, training)
 
-        inputs = self.conv2d_fixed_padding(inputs, filters, 1, 1)
-        inputs = self.batch_norm(inputs, training)
+        inputs = self._conv2d_fixed_padding(inputs, filters, 1, 1)
+        inputs = self._batch_norm(inputs, training)
         inputs = tf.nn.relu(inputs)
 
-        inputs = self.conv2d_fixed_padding(inputs, filters, 3, strides)
-        inputs = self.batch_norm(inputs, training)
+        inputs = self._conv2d_fixed_padding(inputs, filters, 3, strides)
+        inputs = self._batch_norm(inputs, training)
         inputs = tf.nn.relu(inputs)
 
-        inputs = self.conv2d_fixed_padding(inputs, 4 * filters, 1, 1)
-        inputs = self.batch_norm(inputs, training)
+        inputs = self._conv2d_fixed_padding(inputs, 4 * filters, 1, 1)
+        inputs = self._batch_norm(inputs, training)
         inputs += shortcut
         inputs = tf.nn.relu(inputs)
 
@@ -669,27 +666,27 @@ class ResNet_v2(Net):
             The output tensor of the block; shape should match inputs.
         """
         shortcut = inputs
-        inputs = self.batch_norm(inputs, training)
+        inputs = self._batch_norm(inputs, training)
         inputs = tf.nn.relu(inputs)
 
         # The projection shortcut should come after the first batch norm and ReLU
         # since it performs a 1x1 convolution.
         if is_pro_shortcut is not None:
-            shortcut = self.projection_shortcut(inputs, filters, strides)
+            shortcut = self._projection_shortcut(inputs, filters, strides)
 
-        inputs = self.conv2d_fixed_padding(inputs, filters, 1, 1)
+        inputs = self._conv2d_fixed_padding(inputs, filters, 1, 1)
 
-        inputs = self.batch_norm(inputs, training)
+        inputs = self._batch_norm(inputs, training)
         inputs = tf.nn.relu(inputs)
-        inputs = self.conv2d_fixed_padding(inputs, filters, 3, strides)
+        inputs = self._conv2d_fixed_padding(inputs, filters, 3, strides)
 
-        inputs = self.batch_norm(inputs, training)
+        inputs = self._batch_norm(inputs, training)
         inputs = tf.nn.relu(inputs)
-        inputs = self.conv2d_fixed_padding(inputs, 4 * filters, 1, 1)
+        inputs = self._conv2d_fixed_padding(inputs, 4 * filters, 1, 1)
 
         return inputs + shortcut
 
-    def block_layer(self, inputs, filters, blocks, strides,
+    def _block_layer(self, inputs, filters, blocks, strides,
                     training, name):
         """Creates one layer of blocks for the ResNet model.
 

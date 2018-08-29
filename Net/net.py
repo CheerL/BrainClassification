@@ -117,10 +117,11 @@ class Net(object):
                 self.img: img
             })
 
-    def whole_predict(self, tfr_name, batch_size=BATCH_SIZE, with_label=True):
+    def whole_predict(self, tfr_name, batch_size=BATCH_SIZE, with_label=True, final_result=False,
+                      min_connect_tumor_num=MIN_CONNECT_TUMOR_NUM,
+                      min_tumor_num=MIN_TUMOR_NUM):
         with self.graph.as_default():
-            _, next_batch = generate_dataset(
-                [tfr_name], None, train=False, shuffle=False, batch=False)
+            _, next_batch = generate_dataset([tfr_name], None, train=False, shuffle=False, batch=False)
             tfr_predict = []
             tfr_imgs, tfr_labels = self.sess.run(next_batch)
             tfr_size = len(tfr_labels)
@@ -134,7 +135,7 @@ class Net(object):
                     if len(imgs) < batch_size:
                         imgs = np.concatenate(
                             [imgs] * np.ceil(batch_size / len(imgs)
-                                             ).astype(int))[:batch_size]
+                        ).astype(int))[:batch_size]
                     predict.append(self.predict(imgs))
                 predict = np.concatenate(predict)
                 pair = list(zip(predict, rank_copy))
@@ -154,32 +155,34 @@ class Net(object):
                 if 0 < pos < tfr_predict.size - 1:
                     if tfr_predict[pos - 1] == tfr_predict[pos + 1] == 0:
                         tfr_predict[pos] = 0
+
+            if final_result:
+                tfr_predict = 0
+                tfr_tumor_predict_pos = np.where(tfr_predict == 1)[0]
+                if tfr_tumor_predict_pos.size >= min_tumor_num:
+                    if min_connect_tumor_num in np.convolve(tfr_predict, np.ones(min_connect_tumor_num), mode='same'):
+                        tfr_predict = 1
+
             if with_label:
                 return tfr_predict, tfr_labels.argmax(axis=1)
             return tfr_predict
 
     def validate_report(self, predict_list, label_list, test, tumor_as_1=True):
         tumor_num, normal_num = int(tumor_as_1), int(not tumor_as_1)
-        tumor_list = predict_list[label_list ==
-                                  tumor_num]        # tumor result
-        normal_list = predict_list[label_list ==
-                                   normal_num]      # normal result
+        tumor_list = predict_list[label_list == tumor_num]        # tumor result
+        normal_list = predict_list[label_list == normal_num]      # normal result
         if tumor_list.size and normal_list.size:
-            tp_rate = (tumor_list == tumor_num).sum() / \
-                len(tumor_list)     # t -> f
+            tp_rate = (tumor_list == tumor_num).sum() / len(tumor_list)     # t -> f
             fn_rate = 1 - tp_rate                                           # t -> t
-            tn_rate = (normal_list == normal_num).sum() / \
-                len(normal_list)        # f -> f
+            tn_rate = (normal_list == normal_num).sum() / len(normal_list)        # f -> f
             fp_rate = 1 - tn_rate                                           # f -> t
         elif not tumor_list.size:
-            tn_rate = (normal_list == normal_num).sum() / \
-                len(normal_list)        # f -> f
+            tn_rate = (normal_list == normal_num).sum() / len(normal_list)        # f -> f
             fp_rate = 1 - tn_rate                                           # f -> t
             fn_rate = 0.0
             tp_rate = 0.0
         elif not normal_list.size:
-            tp_rate = (tumor_list == tumor_num).sum() / \
-                len(tumor_list)     # t -> f
+            tp_rate = (tumor_list == tumor_num).sum() / len(tumor_list)     # t -> f
             fn_rate = 1 - tp_rate                                           # t -> t
             fp_rate = 0.0
             tn_rate = 0.0
@@ -251,16 +254,14 @@ class Net(object):
             predict_list = np.zeros((file_num), dtype=np.int64)
             for num, tfr_name in enumerate(file_list):
                 tfr_predict, tfr_labels = self.whole_predict(
-                    tfr_name, batch_size, with_label=True)
-                tfr_zero_predict_pos = np.where(tfr_predict == 0)[0]
-                if tfr_zero_predict_pos.size >= min_tumor_num:
-                    if 0 in np.convolve(tfr_predict, np.ones(min_connect_tumor_num), mode='same'):
-                        predict_list[num] = 1
+                    tfr_name, batch_size, with_label=True, final_result=True,
+                    min_connect_tumor_num=min_connect_tumor_num,
+                    min_tumor_num=min_tumor_num)
+                predict_list[num] = tfr_predict
                 if 0 in tfr_labels:
                     label_list[num] = 1
 
-            self.validate_report(predict_list, label_list,
-                                 test, tumor_as_1=True)
+            self.validate_report(predict_list, label_list, test, tumor_as_1=True)
         return predict_list, label_list
 
     def save(self, model_name):
