@@ -424,8 +424,8 @@ class ResNet_v2(Net):
             with tf.device(self.ps_device):
                 learning_rate = tf.train.exponential_decay(
                     LEARNING_RATE, self.train_step, LR_DECAY_STEP, LR_DECAY_RATE)
-                optimizer = tf.train.MomentumOptimizer(learning_rate, MOMENTUM)
-                # optimizer = tf.train.AdamOptimizer(learning_rate)
+                # optimizer = tf.train.MomentumOptimizer(learning_rate, MOMENTUM)
+                optimizer = tf.train.AdamOptimizer(learning_rate)
 
                 train_op = [
                     optimizer.apply_gradients(
