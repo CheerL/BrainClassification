@@ -6,3 +6,5 @@ test.*
 data/*
 *.jpg
 *.pyc
+*.png
+*.ipynb
