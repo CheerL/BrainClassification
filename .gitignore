@@ -1,6 +1,9 @@
 .vscode/*
+.venv/*
 .git/*
 log/*
 data/*
 *.jpg
+*.png
 *.pyc
+*.ipynb
