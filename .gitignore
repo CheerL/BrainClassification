@@ -8,3 +8,4 @@ data/*
 *.pyc
 *.png
 *.ipynb
+!.vscode/sftp.json
