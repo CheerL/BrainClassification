@@ -157,11 +157,12 @@ class Net(object):
                         tfr_predict[pos] = 0
 
             if final_result:
-                tfr_predict = 0
+                result = 0
                 tfr_tumor_predict_pos = np.where(tfr_predict == 1)[0]
                 if tfr_tumor_predict_pos.size >= min_tumor_num:
                     if min_connect_tumor_num in np.convolve(tfr_predict, np.ones(min_connect_tumor_num), mode='same'):
-                        tfr_predict = 1
+                        result = 1
+                tfr_predict = result
 
             if with_label:
                 return tfr_predict, tfr_labels.argmax(axis=1)
@@ -258,7 +259,7 @@ class Net(object):
                     min_connect_tumor_num=min_connect_tumor_num,
                     min_tumor_num=min_tumor_num)
                 predict_list[num] = tfr_predict
-                if 0 in tfr_labels:
+                if 1 in tfr_labels:
                     label_list[num] = 1
 
             self.validate_report(predict_list, label_list, test, tumor_as_1=True)

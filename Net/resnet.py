@@ -11,7 +11,7 @@ from tensorflow.python.training import device_setter
 from config import (BATCH_NORM_DECAY, BATCH_NORM_EPSILON, BATCH_NORM_SCALE,
                     CLASS_NUM, CONV_WEIGHT_DECAY, DEFAULT_VERSION, BATCH_SIZE,
                     LEARNING_RATE, LR_DECAY_RATE, LR_DECAY_STEP, MOMENTUM,
-                    NUM_GPU, PS_TYPE, SUMMARY_PATH)
+                    NUM_GPU, PS_TYPE, SUMMARY_PATH, ADAM)
 from Net.net import Net
 
 
@@ -424,8 +424,10 @@ class ResNet_v2(Net):
             with tf.device(self.ps_device):
                 learning_rate = tf.train.exponential_decay(
                     LEARNING_RATE, self.train_step, LR_DECAY_STEP, LR_DECAY_RATE)
-                # optimizer = tf.train.MomentumOptimizer(learning_rate, MOMENTUM)
-                optimizer = tf.train.AdamOptimizer(learning_rate)
+                if ADAM:
+                    optimizer = tf.train.AdamOptimizer(learning_rate)
+                else:
+                    optimizer = tf.train.MomentumOptimizer(learning_rate, MOMENTUM)
 
                 train_op = [
                     optimizer.apply_gradients(
