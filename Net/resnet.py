@@ -503,11 +503,12 @@ class ResNet_v2(Net):
 
         return tf.layers.conv2d(
             inputs=inputs, filters=filters, kernel_size=kernel_size, strides=strides,
-            padding=('SAME' if strides == 1 else 'VALID'), use_bias=False, data_format=self.data_format,
+            padding=('SAME' if strides == 1 else 'VALID'),
+            use_bias=False, data_format=self.data_format,
             kernel_initializer=tf.variance_scaling_initializer(), name=name)
 
     def _projection_shortcut(self, inputs, filters, strides):
-                # Bottleneck blocks end with 4x the number of filters as they start with
+        # Bottleneck blocks end with 4x the number of filters as they start with
         filters_out = filters * 4 if self.bottleneck else filters
         return self._conv2d_fixed_padding(inputs, filters_out, 1, strides)
 
@@ -535,7 +536,7 @@ class ResNet_v2(Net):
         """
         shortcut = inputs
 
-        if is_pro_shortcut is not None:
+        if is_pro_shortcut:
             shortcut = self._projection_shortcut(inputs, filters, strides)
             shortcut = self._batch_norm(shortcut, training)
 
@@ -579,7 +580,7 @@ class ResNet_v2(Net):
 
         # The projection shortcut should come after the first batch norm and ReLU
         # since it performs a 1x1 convolution.
-        if is_pro_shortcut is not None:
+        if is_pro_shortcut:
             shortcut = self._projection_shortcut(inputs, filters, strides)
 
         inputs = self._conv2d_fixed_padding(inputs, filters, 3, strides)
@@ -617,7 +618,7 @@ class ResNet_v2(Net):
         """
         shortcut = inputs
 
-        if is_pro_shortcut is not None:
+        if is_pro_shortcut:
             shortcut = self._projection_shortcut(inputs, filters, strides)
             shortcut = self._batch_norm(shortcut, training)
 
@@ -673,7 +674,7 @@ class ResNet_v2(Net):
 
         # The projection shortcut should come after the first batch norm and ReLU
         # since it performs a 1x1 convolution.
-        if is_pro_shortcut is not None:
+        if is_pro_shortcut:
             shortcut = self._projection_shortcut(inputs, filters, strides)
 
         inputs = self._conv2d_fixed_padding(inputs, filters, 1, 1)
