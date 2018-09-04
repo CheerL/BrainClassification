@@ -47,6 +47,7 @@ NUM_GPU = 2
 PS_TYPE = 'CPU'
 
 DEFAULT_VERSION = 2
+IS_PRO_SHORTCUT = False
 
 class Ref(object):
     size = REF_SIZE

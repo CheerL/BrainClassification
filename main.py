@@ -4,7 +4,7 @@ import shutil
 
 from config import TEST_TFR_PATH, TRAIN_TFR_PATH, VAL_TFR_PATH, TFR_PATH, TEST_RATE, VAL_RATE
 from DM.DataManagerNii import DataManagerNii as DMN
-from Net.resnet import ResNet, ResNet_v2
+from Net.resnet import ResNet
 
 
 def transfer_to_tfr(dm, batch_size=200):
@@ -69,7 +69,7 @@ def main():
     # dm = DMN()
     # transfer_to_tfr(dm)
     train_tfr_list, val_tfr_list, test_tfr_list = generate_list()
-    net = ResNet_v2()
+    net = ResNet()
     # net.load('log/summary_Aug_24_18_41_23_2018/model/model')
     train(net, train_tfr_list, val_tfr_list)
     test(net, test_tfr_list)

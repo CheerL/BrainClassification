@@ -119,30 +119,39 @@ class Net(object):
 
     def whole_predict(self, tfr_name, batch_size=BATCH_SIZE, with_label=True, final_result=False,
                       min_connect_tumor_num=MIN_CONNECT_TUMOR_NUM,
-                      min_tumor_num=MIN_TUMOR_NUM):
+                      min_tumor_num=MIN_TUMOR_NUM, random=True):
         with self.graph.as_default():
             _, next_batch = generate_dataset([tfr_name], None, train=False, shuffle=False, batch=False)
             tfr_predict = []
             tfr_imgs, tfr_labels = self.sess.run(next_batch)
             tfr_size = len(tfr_labels)
-            rank = np.arange(tfr_size)
-            for _ in range(WHOLE_REPEAT_NUM):
-                rank_copy = rank.copy()
-                np.random.shuffle(rank_copy)
-                predict = []
+            if random:
+                rank = np.arange(tfr_size)
+                for _ in range(WHOLE_REPEAT_NUM):
+                    rank_copy = rank.copy()
+                    np.random.shuffle(rank_copy)
+                    predict = []
+                    for i in range(0, tfr_size, batch_size):
+                        imgs = tfr_imgs[rank_copy][i:i+batch_size]
+                        if len(imgs) < batch_size:
+                            imgs = np.concatenate(
+                                [imgs] * np.ceil(batch_size / len(imgs)).astype(int)
+                            )[:batch_size]
+                        predict.append(self.predict(imgs))
+                    predict = np.concatenate(predict)
+                    pair = list(zip(predict, rank_copy))
+                    pair.sort(key=lambda x: x[1])
+                    tfr_predict.append(np.stack(np.array(pair).T[0]))
+                tfr_predict = np.array(tfr_predict).mean(axis=0).argmax(axis=1)
+            else:
                 for i in range(0, tfr_size, batch_size):
-                    imgs = tfr_imgs[rank_copy][i:i+batch_size]
+                    imgs = tfr_imgs[i:i+batch_size]
                     if len(imgs) < batch_size:
                         imgs = np.concatenate(
-                            [imgs] * np.ceil(batch_size / len(imgs)
-                        ).astype(int))[:batch_size]
-                    predict.append(self.predict(imgs))
-                predict = np.concatenate(predict)
-                pair = list(zip(predict, rank_copy))
-                pair.sort(key=lambda x: x[1])
-                tfr_predict.append(np.stack(np.array(pair).T[0]))
-
-            tfr_predict = np.array(tfr_predict).mean(axis=0).argmax(axis=1)
+                            [imgs] * np.ceil(batch_size / len(imgs)).astype(int)
+                        )[:batch_size]
+                    tfr_predict.append(self.predict(imgs))
+                tfr_predict = np.concatenate(tfr_predict)
 
             tfr_zero_predict_pos = np.where(tfr_predict == 0)[0]
             for pos in tfr_zero_predict_pos:
