@@ -151,7 +151,7 @@ class Net(object):
                             [imgs] * np.ceil(batch_size / len(imgs)).astype(int)
                         )[:batch_size]
                     tfr_predict.append(self.predict(imgs))
-                tfr_predict = np.concatenate(tfr_predict)
+                tfr_predict = np.concatenate(tfr_predict).argmax(axis=1)
 
             tfr_zero_predict_pos = np.where(tfr_predict == 0)[0]
             for pos in tfr_zero_predict_pos:

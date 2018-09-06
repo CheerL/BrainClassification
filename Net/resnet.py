@@ -16,7 +16,7 @@ from Net.net import Net
 
 
 class ResNet(Net):
-    def __init__(self, resnet_size=50, data_format=None,
+    def __init__(self, data_format=None,
                  resnet_version=DEFAULT_VERSION,
                  bottleneck=True, class_num=CLASS_NUM,
                  num_gpu=NUM_GPU, ps_type=PS_TYPE):
@@ -25,7 +25,6 @@ class ResNet(Net):
         assert ps_type in (
             'CPU', 'GPU'), 'Parameter server must be CPU or GPU'
         assert ps_type != 'GPU' or num_gpu is not 0, 'GPU num is 0, CPU must be used as parameter server.'
-        assert resnet_size % 6 == 2, 'Resnet size must be 6n + 2'
         assert resnet_version in (1, 2), 'Resnet version should be 1 or 2.'
 
         self.num_gpu = num_gpu
@@ -47,7 +46,6 @@ class ResNet(Net):
             else:
                 self.block_fn = self._building_block_v2
 
-        self.resnet_size = resnet_size
         self.resnet_version = resnet_version
         self.data_format = data_format
         self.bottleneck = bottleneck
@@ -56,10 +54,10 @@ class ResNet(Net):
         self.conv_stride = 1
         self.first_pool_size = None
         self.first_pool_stride = None
-        self.block_sizes = [3, 4, 6, 3]
-        self.block_strides = [1, 2, 2, 2]
+        self.block_sizes = [3, 4, 6, 6, 6, 3]
+        self.block_strides = [1, 2, 2, 2, 2, 2]
+        self.final_size = 1000 
         self.num_blocks = len(self.block_sizes)
-        self.final_size = 64
         self.pre_activation = resnet_version == 2
         self.update_ops = None
 
@@ -178,10 +176,10 @@ class ResNet(Net):
                         axes = [2, 3] if self.data_format == 'channels_first' else [
                             1, 2]
                         net = tf.reduce_mean(net, axes, keepdims=True)
-                        net = tf.identity(net, 'final_reduce_mean')
                         net = tf.layers.flatten(net, 'flatten')
+                        # net = tf.layers.dense(inputs=net, units=self.final_size)
+                        # net = self._batch_norm(net, training)
                         net = tf.layers.dense(inputs=net, units=self.class_num)
-                        net = tf.identity(net, 'final_dense')
 
                     with tf.variable_scope('result'):
                         logits = tf.cast(net, tf.float32, 'logits')
