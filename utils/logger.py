@@ -5,7 +5,6 @@ from logging.handlers import TimedRotatingFileHandler
 from functools import wraps
 from config import LOG_PATH
 
-
 def no_same_name(cls):
     obj_dict = {}
 
@@ -23,11 +22,12 @@ class Logger(logging.Logger):
     LogHandler
     """
 
-    def __init__(self, name, level=logging.DEBUG, handlers=['file', 'stream']):
+    def __init__(self, name, log_path=LOG_PATH, level=logging.DEBUG, handlers=['file', 'stream']):
         self.name = name
         self.level = level
         self.file_handler = None
         self.stream_handler = None
+        self.log_path = log_path
         logging.Logger.__init__(self, self.name, level=level)
         for handler in handlers:
             getattr(self, 'set_{}_handler'.format(handler))()
@@ -38,7 +38,7 @@ class Logger(logging.Logger):
         :param level:
         :return:
         """
-        file_name = os.path.join(LOG_PATH, '{name}.log'.format(name=self.name))
+        file_name = os.path.join(self.log_path, '{name}.log'.format(name=self.name))
         # 设置日志回滚, 保存在log目录, 一天保存一个文件, 保留15天
         file_handler = TimedRotatingFileHandler(
             filename=file_name,
@@ -95,6 +95,11 @@ class Logger(logging.Logger):
         if self.stream_handler:
             self.removeHandler(self.stream_handler)
             self.stream_handler = None
+
+    def reset_log_path(self, log_path):
+        self.log_path = log_path
+        self.remove_file_handler()
+        self.set_file_handler()
 
 
 if __name__ == '__main__':

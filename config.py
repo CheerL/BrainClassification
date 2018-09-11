@@ -1,17 +1,16 @@
 import os
 import time
 
-run_time = time.ctime()[4:].replace(' ', '_').replace(':', '_')
+RUN_TIME = time.ctime()[4:].replace(' ', '_').replace(':', '_')
 
 ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(ROOT_PATH, 'data')
+EXT_TEST_TFR_PATH = os.path.join(DATA_PATH, 'test')
 TFR_PATH = os.path.join(DATA_PATH, 'tfrecord')
 TEST_TFR_PATH = os.path.join(DATA_PATH, 'tfr_test')
 TRAIN_TFR_PATH = os.path.join(DATA_PATH, 'tfr_train')
 VAL_TFR_PATH = os.path.join(DATA_PATH, 'tfr_val')
-SUMMARY_PATH = os.path.join(ROOT_PATH, 'log', 'summary_%s' % run_time)
-MODEL_PATH = os.path.join(SUMMARY_PATH, 'model')
-LOG_PATH = SUMMARY_PATH
+LOG_PATH = os.path.join(ROOT_PATH, 'log', 'summary_%s' % RUN_TIME)
 
 NONEMPTY_AREA_RATE = 0.15
 CLASS_NUM = 2
@@ -25,7 +24,7 @@ REF_DIRECTION = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
 REF_SPACING = (1.0, 1.0)
 
 LEARNING_RATE = 2e-2
-BATCH_SIZE = 40
+BATCH_SIZE = 24
 LR_DECAY_STEP = int(10000 / BATCH_SIZE)
 LR_DECAY_RATE = 0.90
 ADAM = False
@@ -40,7 +39,7 @@ VAL_RATE = 0.1
 WHOLE_REPEAT_NUM = 5
 MIN_TUMOR_NUM = 10
 MIN_CONNECT_TUMOR_NUM = 6
-REPEAT_NUM = 10
+REPEAT_NUM = 15
 SUMMARY_INTERVAL = 50
 VAL_INTERVAL = 1000
 NUM_GPU = 2
@@ -48,6 +47,7 @@ PS_TYPE = 'CPU'
 
 DEFAULT_VERSION = 2
 IS_PRO_SHORTCUT = False
+BLOCK_SIZE = [9, 15, 9]
 
 class Ref(object):
     size = REF_SIZE

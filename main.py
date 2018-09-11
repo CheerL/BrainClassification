@@ -2,14 +2,15 @@ import os
 import random
 import shutil
 
-from config import TEST_TFR_PATH, TRAIN_TFR_PATH, VAL_TFR_PATH, TFR_PATH, TEST_RATE, VAL_RATE
+from utils import clear_empty_log
+from config import EXT_TEST_TFR_PATH, TEST_TFR_PATH, TRAIN_TFR_PATH, VAL_TFR_PATH, TFR_PATH, TEST_RATE, VAL_RATE
 from DM.DataManagerNii import DataManagerNii as DMN
 from Net.resnet import ResNet
 
 
 def transfer_to_tfr(dm, batch_size=200):
     dm.create_file_list()
-    file_list = dm.file_list
+    file_list = [tfr for tfr in dm.file_list if 'Brats17Val' not in tfr and 'NC' not in tfr]
     for i in range(0, len(file_list), batch_size):
         dm.file_list = file_list[i:i+batch_size]
         dm.load_image()
@@ -24,8 +25,18 @@ def train(net, train_tfr_list, val_tfr_list):
     net.save('model')
 
 
-def test(net, test_tfr_list):
+def test(net, val_tfr_list, test_tfr_list, ext_test_tfr_list, condition):
+    net.logger.info('Validate val list')
+    net.validate(val_tfr_list, test=True)
+    net.logger.info('Validate test list')
     net.validate(test_tfr_list, test=True)
+    net.logger.info('Whole validate val list')
+    net.whole_validate_best(val_tfr_list, test=True)
+    net.logger.info('Whole validate test list')
+    net.whole_validate_best(test_tfr_list, test=True)
+    net.logger.info('Whole validate ext test list')
+    net.whole_validate_best(ext_test_tfr_list, test=True, condition=condition)
+
 
 
 def generate_list():
@@ -62,18 +73,24 @@ def generate_list():
         TEST_TFR_PATH) if 'tfrecord' in path]
     val_tfr_list = [os.path.join(VAL_TFR_PATH, path) for path in os.listdir(
         VAL_TFR_PATH) if 'tfrecord' in path]
-    return train_tfr_list, val_tfr_list, test_tfr_list
+    ext_test_tfr_list = [os.path.join(EXT_TEST_TFR_PATH, path) for path in os.listdir(
+        EXT_TEST_TFR_PATH) if 'tfrecord' in path]
+    return train_tfr_list, val_tfr_list, test_tfr_list, ext_test_tfr_list
 
 
 def main():
     # dm = DMN()
     # transfer_to_tfr(dm)
-    train_tfr_list, val_tfr_list, test_tfr_list = generate_list()
+    train_tfr_list, val_tfr_list, test_tfr_list, ext_test_tfr_list = generate_list()
     net = ResNet()
-    # net.load('log/summary_Sep__5_16_40_53_2018/model/model')
+    # net.load('log/summary_Sep_10_00_38_55_2018/model/model')
     train(net, train_tfr_list, val_tfr_list)
-    test(net, test_tfr_list)
+    test(net, val_tfr_list, test_tfr_list, ext_test_tfr_list,
+         condition=lambda tfr_name, tfr_lables: 'Brats17' in tfr_name)
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    finally:
+        clear_empty_log(False)

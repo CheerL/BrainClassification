@@ -11,12 +11,12 @@ from tensorflow.python.training import device_setter
 from config import (BATCH_NORM_DECAY, BATCH_NORM_EPSILON, BATCH_NORM_SCALE,
                     CLASS_NUM, CONV_WEIGHT_DECAY, DEFAULT_VERSION, BATCH_SIZE,
                     LEARNING_RATE, LR_DECAY_RATE, LR_DECAY_STEP, MOMENTUM,
-                    NUM_GPU, PS_TYPE, SUMMARY_PATH, ADAM)
+                    NUM_GPU, PS_TYPE, ADAM, BLOCK_SIZE)
 from Net.net import Net
 
 
 class ResNet(Net):
-    def __init__(self, data_format=None,
+    def __init__(self, data_format=None, block_sizes=BLOCK_SIZE,
                  resnet_version=DEFAULT_VERSION,
                  bottleneck=True, class_num=CLASS_NUM,
                  num_gpu=NUM_GPU, ps_type=PS_TYPE):
@@ -54,10 +54,10 @@ class ResNet(Net):
         self.conv_stride = 1
         self.first_pool_size = None
         self.first_pool_stride = None
-        self.block_sizes = [3, 4, 6, 6, 6, 3]
-        self.block_strides = [1, 2, 2, 2, 2, 2]
-        self.final_size = 1000 
+        self.block_sizes = block_sizes
         self.num_blocks = len(self.block_sizes)
+        self.block_strides = [(1 if i is 0 else 2) for i in range(self.num_blocks)]
+        self.final_size = 500
         self.pre_activation = resnet_version == 2
         self.update_ops = None
 
@@ -274,7 +274,7 @@ class ResNet(Net):
                 tf.summary.scalar('lr', learning_rate)
                 self.summary = tf.summary.merge(
                     self.graph.get_collection(tf.GraphKeys.SUMMARIES))
-                self.writer = tf.summary.FileWriter(SUMMARY_PATH, self.graph)
+                self.writer = tf.summary.FileWriter(self.summary_path, self.graph)
 
     def _batch_norm(self, inputs, training):
         """Performs a batch normalization using a standard set of parameters."""
