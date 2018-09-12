@@ -7,11 +7,11 @@ def path_init(paths):
         if not os.path.exists(path):
             os.makedirs(path)
 
-def clear_empty_log():
+def clear_empty_log(ignore_self=True):
     log_base_path = os.path.join(ROOT_PATH, 'log')
     for dir_name in os.listdir(log_base_path):
         sub_path = os.path.join(log_base_path, dir_name)
-        if sub_path != LOG_PATH and os.path.isdir(sub_path):
+        if sub_path != LOG_PATH and os.path.isdir(sub_path) or not ignore_self:
             paths = os.listdir(sub_path)
             if not (paths and 'model' in paths):
                 # os.removedirs(sub_path)
