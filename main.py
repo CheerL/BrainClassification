@@ -50,20 +50,14 @@ def generate_list():
         val_num = int(total_num * (1 - TEST_RATE) * VAL_RATE)
         val_num_list = random.sample(train_num_list, val_num)
         train_num_list = list(train_num_list.difference(set(val_num_list)))
-        train_tfr_list = [path for i, path in enumerate(
-            tfr_list) if i in train_num_list]
-        test_tfr_list = [path for i, path in enumerate(
-            tfr_list) if i in test_num_list]
-        val_tfr_list = [path for i, path in enumerate(
-            tfr_list) if i in val_num_list]
 
-        for path in train_tfr_list:
+        for path in map(lambda i: tfr_list[i], train_num_list):
             shutil.copyfile(os.path.join(TFR_PATH, path),
                             os.path.join(TRAIN_TFR_PATH, path))
-        for path in test_tfr_list:
+        for path in map(lambda i: tfr_list[i], test_num_list):
             shutil.copyfile(os.path.join(TFR_PATH, path),
                             os.path.join(TEST_TFR_PATH, path))
-        for path in val_tfr_list:
+        for path in map(lambda i: tfr_list[i], val_num_list):
             shutil.copyfile(os.path.join(TFR_PATH, path),
                             os.path.join(VAL_TFR_PATH, path))
 

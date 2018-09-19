@@ -51,7 +51,7 @@ class DataManager(object):
                 stack.extend([os.path.join(now_path, sub)
                               for sub in os.listdir(now_path)])
             else:
-                if now_path.endswith('nii.gz'):
+                if now_path.endswith('nii.gz') or now_path.endswith('nii'):
                     now_dir = os.path.dirname(now_path)
                     if now_dir not in self.file_list:
                         self.file_list.append(now_dir)
