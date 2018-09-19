@@ -6,11 +6,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib import slim
 
-<<<<<<< HEAD
-from config import (BATCH_SIZE, CLASS_NUM, MIN_CONNECT_TUMOR_NUM,
-=======
 from config import (BATCH_SIZE, CLASS_NUM, MIN_CONNECT_TUMOR_NUM, VAL_SUMMARY_INTERVAL,
->>>>>>> change-net
                     MIN_TUMOR_NUM, MOD_NUM, REPEAT_NUM, ROOT_PATH, RUN_TIME,
                     SIZE, SUMMARY_INTERVAL, VAL_INTERVAL, WHOLE_REPEAT_NUM)
 from utils.logger import Logger
@@ -148,11 +144,7 @@ class Net(object):
                             imgs = np.concatenate(
                                 [imgs] * batch_size).astype(int)[:batch_size]
                         predict.append(self.predict(imgs))
-<<<<<<< HEAD
-                    predict = np.concatenate(predict)
-=======
                     predict = np.concatenate(predict)[:tfr_size]
->>>>>>> change-net
                     pair = list(zip(predict, rank_copy))
                     pair.sort(key=lambda x: x[1])
                     tfr_predict.append(np.stack(np.array(pair).T[0]))
@@ -164,11 +156,7 @@ class Net(object):
                         imgs = np.concatenate(
                             [imgs] * batch_size).astype(int)[:batch_size]
                     tfr_predict.append(self.predict(imgs))
-<<<<<<< HEAD
-                tfr_predict = np.concatenate(tfr_predict).argmax(axis=1)
-=======
                 tfr_predict = np.concatenate(tfr_predict).argmax(axis=1)[:tfr_size]
->>>>>>> change-net
 
             tfr_zero_predict_pos = np.where(tfr_predict == 0)[0]
             for pos in tfr_zero_predict_pos:
