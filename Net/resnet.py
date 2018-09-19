@@ -11,7 +11,7 @@ from tensorflow.python.training import device_setter
 from config import (BATCH_NORM_DECAY, BATCH_NORM_EPSILON, BATCH_NORM_SCALE,
                     CLASS_NUM, CONV_WEIGHT_DECAY, DEFAULT_VERSION, BATCH_SIZE,
                     LEARNING_RATE, LR_DECAY_RATE, LR_DECAY_STEP, MOMENTUM,
-                    NUM_GPU, PS_TYPE, ADAM, BLOCK_SIZE)
+                    NUM_GPU, PS_TYPE, ADAM, BLOCK_SIZE, IS_PRO_SHORTCUT)
 from Net.net import Net
 
 
@@ -19,7 +19,8 @@ class ResNet(Net):
     def __init__(self, data_format=None, block_sizes=BLOCK_SIZE,
                  resnet_version=DEFAULT_VERSION,
                  bottleneck=True, class_num=CLASS_NUM,
-                 num_gpu=NUM_GPU, ps_type=PS_TYPE):
+                 num_gpu=NUM_GPU, ps_type=PS_TYPE,
+                 is_pro_shortcut=IS_PRO_SHORTCUT):
         assert isinstance(
             num_gpu, int) and num_gpu >= 0, 'GPU count must be 0 or a positive integer.'
         assert ps_type in (
@@ -60,6 +61,7 @@ class ResNet(Net):
         self.final_size = 500
         self.pre_activation = resnet_version == 2
         self.update_ops = None
+        self.is_pro_shortcut = is_pro_shortcut
 
         super(ResNet, self).__init__(class_num)
         with self.graph.as_default():
@@ -330,7 +332,8 @@ class ResNet(Net):
             filters=filters * 4 if self.bottleneck else filters
             )
 
-    def _building_block_v1(self, inputs, filters, training, strides, is_pro_shortcut=False):
+    def _building_block_v1(self, inputs, filters, training, strides,
+                           is_pro_shortcut=False):
         """A single block for ResNet v1, without a bottleneck.
 
         Convolution then batch normalization then ReLU as described by:
@@ -354,7 +357,7 @@ class ResNet(Net):
         """
         shortcut = inputs
 
-        if is_pro_shortcut:
+        if is_pro_shortcut or self.is_pro_shortcut:
             shortcut = self._projection_shortcut(inputs, filters, strides)
             shortcut = self._batch_norm(shortcut, training)
 
@@ -369,7 +372,8 @@ class ResNet(Net):
 
         return inputs
 
-    def _building_block_v2(self, inputs, filters, training, strides, is_pro_shortcut=False):
+    def _building_block_v2(self, inputs, filters, training, strides,
+                           is_pro_shortcut=False):
         """A single block for ResNet v2, without a bottleneck.
 
         Batch normalization then ReLu then convolution as described by:
@@ -398,7 +402,7 @@ class ResNet(Net):
 
         # The projection shortcut should come after the first batch norm and ReLU
         # since it performs a 1x1 convolution.
-        if is_pro_shortcut:
+        if is_pro_shortcut or self.is_pro_shortcut:
             shortcut = self._projection_shortcut(inputs, filters, strides)
 
         inputs = self._conv2d_fixed_padding(inputs, filters, 3, strides)
@@ -409,7 +413,8 @@ class ResNet(Net):
 
         return inputs + shortcut
 
-    def _bottleneck_block_v1(self, inputs, filters, training, strides, is_pro_shortcut=False):
+    def _bottleneck_block_v1(self, inputs, filters, training, strides,
+                             is_pro_shortcut=False):
         """A single block for ResNet v1, with a bottleneck.
 
         Similar to _building_block_v1(), except using the "bottleneck" blocks
@@ -436,7 +441,7 @@ class ResNet(Net):
         """
         shortcut = inputs
 
-        if is_pro_shortcut:
+        if is_pro_shortcut or self.is_pro_shortcut:
             shortcut = self._projection_shortcut(inputs, filters, strides)
             shortcut = self._batch_norm(shortcut, training)
 
@@ -455,7 +460,8 @@ class ResNet(Net):
 
         return inputs
 
-    def _bottleneck_block_v2(self, inputs, filters, training, strides, is_pro_shortcut=False):
+    def _bottleneck_block_v2(self, inputs, filters, training, strides,
+                             is_pro_shortcut=False):
         """A single block for ResNet v2, without a bottleneck.
 
         Similar to _building_block_v2(), except using the "bottleneck" blocks
@@ -492,7 +498,7 @@ class ResNet(Net):
 
         # The projection shortcut should come after the first batch norm and ReLU
         # since it performs a 1x1 convolution.
-        if is_pro_shortcut:
+        if is_pro_shortcut or self.is_pro_shortcut:
             shortcut = self._projection_shortcut(inputs, filters, strides)
 
         inputs = self._conv2d_fixed_padding(inputs, filters, 1, 1)
@@ -535,7 +541,7 @@ class ResNet(Net):
 
             for i in range(1, blocks):
                 with tf.variable_scope('block_conv_%d' % (i + 1)):
-                    inputs = self.block_fn(inputs, filters, training, 1, False)
+                    inputs = self.block_fn(inputs, filters, training, 1)
 
             return inputs
 

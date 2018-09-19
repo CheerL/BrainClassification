@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib import slim
 
-from config import (BATCH_SIZE, CLASS_NUM, MIN_CONNECT_TUMOR_NUM,
+from config import (BATCH_SIZE, CLASS_NUM, MIN_CONNECT_TUMOR_NUM, VAL_SUMMARY_INTERVAL,
                     MIN_TUMOR_NUM, MOD_NUM, REPEAT_NUM, ROOT_PATH, RUN_TIME,
                     SIZE, SUMMARY_INTERVAL, VAL_INTERVAL, WHOLE_REPEAT_NUM)
 from utils.logger import Logger
@@ -144,7 +144,7 @@ class Net(object):
                             imgs = np.concatenate(
                                 [imgs] * batch_size).astype(int)[:batch_size]
                         predict.append(self.predict(imgs))
-                    predict = np.concatenate(predict)
+                    predict = np.concatenate(predict)[:tfr_size]
                     pair = list(zip(predict, rank_copy))
                     pair.sort(key=lambda x: x[1])
                     tfr_predict.append(np.stack(np.array(pair).T[0]))
@@ -156,7 +156,7 @@ class Net(object):
                         imgs = np.concatenate(
                             [imgs] * batch_size).astype(int)[:batch_size]
                     tfr_predict.append(self.predict(imgs))
-                tfr_predict = np.concatenate(tfr_predict).argmax(axis=1)
+                tfr_predict = np.concatenate(tfr_predict).argmax(axis=1)[:tfr_size]
 
             tfr_zero_predict_pos = np.where(tfr_predict == 0)[0]
             for pos in tfr_zero_predict_pos:
@@ -263,7 +263,7 @@ class Net(object):
                             self.img: img,
                             self.label: label
                         })
-                    if val_step % 10 == 0:
+                    if val_step % VAL_SUMMARY_INTERVAL == 0:
                         self.logger.info('Validation summary %d, accuracy: %f, loss: %f' % (
                             val_step, accuracy, loss))
                     predict_list.append(predict.argmax(axis=1))
