@@ -16,7 +16,7 @@ from Net.net import Net
 
 
 class ResNet(Net):
-    def __init__(self, data_format=None, block_sizes=BLOCK_SIZE,
+    def __init__(self, init_build=True, data_format=None, block_sizes=BLOCK_SIZE,
                  resnet_version=DEFAULT_VERSION,
                  bottleneck=True, class_num=CLASS_NUM,
                  num_gpu=NUM_GPU, ps_type=PS_TYPE,
@@ -63,9 +63,10 @@ class ResNet(Net):
         self.update_ops = None
         self.is_pro_shortcut = is_pro_shortcut
 
-        super(ResNet, self).__init__(class_num)
-        with self.graph.as_default():
-            self.build()
+        super(ResNet, self).__init__(class_num, init_build=init_build)
+        if init_build:
+            with self.graph.as_default():
+                self.build()
 
     def device_setter(self, worker_device, ps_ops=None):
         if ps_ops is None:
@@ -252,16 +253,16 @@ class ResNet(Net):
                         gradvars, global_step=self.train_step)
                 ]
                 train_op.extend(self.update_ops)
-                self.trainer = tf.group(*train_op)
+                self.trainer = tf.group(*train_op, name='trainer')
 
                 cross_entropy = tf.reduce_mean(
                     [loss['cross_entropy'] for loss in self.tower_loss])
                 l2_loss = tf.reduce_mean([loss['l2_loss']
                                           for loss in self.tower_loss])
                 self.loss = tf.reduce_mean(
-                    [loss['loss'] for loss in self.tower_loss])
-                self.accuracy = tf.reduce_mean(self.tower_accuracy)
-                self.prediction = tf.concat(self.tower_preds, axis=0)
+                    [loss['loss'] for loss in self.tower_loss], name='loss')
+                self.accuracy = tf.reduce_mean(self.tower_accuracy, name='accuracy')
+                self.prediction = tf.concat(self.tower_preds, axis=0, name='prediction')
                 # self.trainer = tf.train.MomentumOptimizer(learning_rate, MOMENTUM).minimize(
                 #     self.loss, global_step=self.train_step)
                 # self.trainer = tf.train.AdamOptimizer(learning_rate).minimize(
@@ -275,8 +276,30 @@ class ResNet(Net):
                 tf.summary.scalar('accuracy', self.accuracy)
                 tf.summary.scalar('lr', learning_rate)
                 self.summary = tf.summary.merge(
-                    self.graph.get_collection(tf.GraphKeys.SUMMARIES))
+                    self.graph.get_collection(tf.GraphKeys.SUMMARIES),
+                    name='summary'
+                )
                 self.writer = tf.summary.FileWriter(self.summary_path, self.graph)
+
+    def load(self, model_path):
+        def get_var(name, ori_name=None):
+            try:
+                return self.graph.get_tensor_by_name(name + ':0')
+            except KeyError:
+                return self.graph.get_tensor_by_name(ori_name + ':0')
+
+        super(ResNet, self).load(model_path)
+        if not self.init_build:
+            self.prediction = get_var('resnet_main/train_net/prediction', 'resnet_main/train_net/concat')
+            self.accuracy = get_var('resnet_main/train_net/accuracy', 'resnet_main/train_net/Mean_3')
+            self.loss = get_var('resnet_main/train_net/loss', 'resnet_main/train_net/Mean_2')
+            self.accuracy = get_var('resnet_main/train_net/accuracy', 'resnet_main/train_net/Mean_3')
+            self.trainer = get_var('resnet_main/train_net/trainer', 'resnet_main/train_net/Momentum')
+            self.summary = tf.summary.merge(
+                self.graph.get_collection(tf.GraphKeys.SUMMARIES),
+                name='summary'
+            )
+            self.writer = tf.summary.FileWriter(self.summary_path, self.graph)
 
     def _batch_norm(self, inputs, training):
         """Performs a batch normalization using a standard set of parameters."""

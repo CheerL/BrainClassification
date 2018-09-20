@@ -18,7 +18,7 @@ from utils.tfrecord import generate_dataset
 
 
 class Net(object):
-    def __init__(self, class_num=CLASS_NUM):
+    def __init__(self, class_num=CLASS_NUM, init_build=True):
         net_config = tf.ConfigProto(
             allow_soft_placement=True,
             log_device_placement=False,
@@ -37,42 +37,53 @@ class Net(object):
 
         self.logger = Logger('net')
         self.class_num = class_num
-        self.graph = tf.Graph()
-        self.sess = tf.Session(graph=self.graph, config=net_config)
-        with self.graph.as_default(), tf.variable_scope('net_base'):
-            self.img = tf.placeholder(
-                tf.float32, [None, SIZE, SIZE, MOD_NUM], name='img')
-            self.label = tf.placeholder(
-                tf.float32, [None, CLASS_NUM], name='label')
-            # self.inputs = tf.reshape(self.img, [-1, SIZE, SIZE, MOD_NUM])
-            self.inputs = tf.identity(self.img, 'inputs')
-            self.tower_loss = []
-            self.tower_grads = []
-            self.tower_preds = []
-            self.tower_accuracy = []
-            self.prediction = None
-            self.accuracy = None
-            self.loss = None
-            self.trainer = None
-            self.summary = None
-            self.writer = None
-            self.saver = None
-            self.train_step = tf.train.get_or_create_global_step(self.graph)
-            with tf.variable_scope('validation_net'):
-                self.val_step = tf.Variable(0, dtype=tf.int32, name='v_step')
-                self.val_data = {
-                    'avg_acc': tf.Variable(0.0, dtype=tf.float32, name='avg_acc'),
-                    'tp': tf.Variable(0.0, dtype=tf.float32, name='tp'),
-                    'tn': tf.Variable(0.0, dtype=tf.float32, name='tn'),
-                    'fp': tf.Variable(0.0, dtype=tf.float32, name='fp'),
-                    'fn': tf.Variable(0.0, dtype=tf.float32, name='fn')
-                }
+        self.sess = tf.Session(config=net_config)
+        self.graph = self.sess.graph
+        self.img = None
+        self.label = None
+        self.train_step = None
+        self.val_step = None
+        self.val_data = None
+        self.val_summary = None
+        self.tower_loss = []
+        self.tower_grads = []
+        self.tower_preds = []
+        self.tower_accuracy = []
+        self.prediction = None
+        self.accuracy = None
+        self.loss = None
+        self.trainer = None
+        self.summary = None
+        self.writer = None
+        self.saver = None
+        self.init_build = init_build
 
-                for name, var in self.val_data.items():
-                    tf.summary.scalar(name, var, ['validation_summary'])
-                self.val_summary = tf.summary.merge(
-                    self.graph.get_collection('validation_summary')
-                )
+        if init_build:
+            with self.graph.as_default(), tf.variable_scope('net_base'):
+                self.img = tf.placeholder(
+                    tf.float32, [None, SIZE, SIZE, MOD_NUM], name='img')
+                self.label = tf.placeholder(
+                    tf.float32, [None, CLASS_NUM], name='label')
+                # self.inputs = tf.reshape(self.img, [-1, SIZE, SIZE, MOD_NUM])
+                # self.inputs = tf.identity(self.img, 'inputs')
+
+                self.train_step = tf.train.get_or_create_global_step(self.graph)
+                with tf.variable_scope('validation_net'):
+                    self.val_step = tf.Variable(0, dtype=tf.int32, name='v_step')
+                    self.val_data = {
+                        'avg_acc': tf.Variable(0.0, dtype=tf.float32, name='avg_acc'),
+                        'tp': tf.Variable(0.0, dtype=tf.float32, name='tp'),
+                        'tn': tf.Variable(0.0, dtype=tf.float32, name='tn'),
+                        'fp': tf.Variable(0.0, dtype=tf.float32, name='fp'),
+                        'fn': tf.Variable(0.0, dtype=tf.float32, name='fn')
+                    }
+
+                    for name, var in self.val_data.items():
+                        tf.summary.scalar(name, var, ['validation_summary'])
+                    self.val_summary = tf.summary.merge(
+                        self.graph.get_collection('validation_summary'),
+                        name='val_summary'
+                    )
 
     def start(self):
         if not self.__loaded:
@@ -339,21 +350,41 @@ class Net(object):
             file.write(report_result + '\n')
 
     def save(self, model_name):
-        model_path = os.path.join(self.summary_path, 'model', model_name)
-        self.saver.save(self.sess, model_path)
-        self.logger.info('Save model %s' % model_path)
+        if self.__loaded:
+            model_path = os.path.join(self.summary_path, 'model', model_name)
+            self.saver.save(self.sess, model_path)
+            self.logger.info('Save model %s' % model_path)
 
     def load(self, model_path):
-        self.run_time = model_path.strip('/').split('/')[-3][8:]
-        self.summary_path = os.path.join(
-            ROOT_PATH, 'log', 'summary_%s' % self.run_time)
-        self.logger.reset_log_path(self.summary_path)
-        if self.writer is not None:
-            self.writer = tf.summary.FileWriter(self.summary_path, self.graph)
-        self.logger.info('Change run time back to %s' % self.run_time)
-        self.saver.restore(self.sess, model_path)
-        self.__loaded = True
-        self.logger.info('Load model %s' % model_path)
+        if not self.__loaded:
+            self.run_time = model_path.strip('/').split('/')[-3][8:]
+            self.summary_path = os.path.join(
+                ROOT_PATH, 'log', 'summary_%s' % self.run_time)
+            self.logger.reset_log_path(self.summary_path)
+            self.logger.info('Change run time back to %s' % self.run_time)
+            if not self.init_build:
+                self.saver = tf.train.import_meta_graph(
+                    os.path.join(self.summary_path, 'model', 'model.meta'),
+                    clear_devices=True
+                )
+                self.img = self.graph.get_tensor_by_name('net_base/img:0')
+                self.label = self.graph.get_tensor_by_name('net_base/label:0')
+                self.train_step = self.graph.get_tensor_by_name('net_base/global_step:0')
+                self.val_step = self.graph.get_tensor_by_name('net_base/validation_net/v_step:0')
+                self.val_data = {
+                    'avg_acc': self.graph.get_tensor_by_name('net_base/validation_net/avg_acc:0'),
+                    'tp': self.graph.get_tensor_by_name('net_base/validation_net/tp:0'),
+                    'tn': self.graph.get_tensor_by_name('net_base/validation_net/tn:0'),
+                    'fp': self.graph.get_tensor_by_name('net_base/validation_net/fp:0'),
+                    'fn': self.graph.get_tensor_by_name('net_base/validation_net/fn:0')
+                }
+                self.val_summary = tf.summary.merge(
+                    self.graph.get_collection('validation_summary'),
+                    name='val_summary'
+                )
+            self.saver.restore(self.sess, model_path)
+            self.__loaded = True
+            self.logger.info('Load model %s' % model_path)
 
 
 if __name__ == '__main__':
