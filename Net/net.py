@@ -289,10 +289,10 @@ class Net(object):
                                  test, tumor_as_1=True)
         return predict_list, label_list
 
-    def whole_validate(self, file_list, batch_size=BATCH_SIZE, test=False,
-                       condition=lambda tfr_name, tfr_labels: 1 in tfr_labels,
-                       min_connect_tumor_num=MIN_CONNECT_TUMOR_NUM,
-                       min_tumor_num=MIN_TUMOR_NUM):
+    def whole_validate(self, file_list, batch_size=BATCH_SIZE, test=False, condition=None,
+                 min_connect_tumor_num=MIN_CONNECT_TUMOR_NUM, min_tumor_num=MIN_TUMOR_NUM):
+        if condition is None:
+            condition = lambda tfr_name, tfr_labels: 1 in tfr_labels
         with self.graph.as_default():
             file_num = len(file_list)
             label_list = np.zeros((file_num), dtype=np.int64)
@@ -309,8 +309,9 @@ class Net(object):
                                  test, tumor_as_1=True)
         return predict_list, label_list
 
-    def whole_validate_best(self, file_list, batch_size=BATCH_SIZE, test=False,
-                            condition=lambda tfr_name, tfr_labels: 1 in tfr_labels):
+    def whole_validate_best(self, file_list, batch_size=BATCH_SIZE, test=False, condition=None):
+        if condition is None:
+            condition = lambda tfr_name, tfr_labels: 1 in tfr_labels
         with self.graph.as_default():
             file_num = len(file_list)
             label_list = np.zeros((file_num), dtype=np.int64)

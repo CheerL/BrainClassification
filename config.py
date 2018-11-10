@@ -4,8 +4,7 @@ import time
 RUN_TIME = time.ctime()[4:].replace(' ', '_').replace(':', '_')
 
 ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(ROOT_PATH, 'data')
-EXT_TEST_TFR_PATH = os.path.join(DATA_PATH, 'test')
+DATA_PATH = os.path.join(ROOT_PATH, 'data', 'new_tfr')
 TFR_PATH = os.path.join(DATA_PATH, 'tfrecord')
 TEST_TFR_PATH = os.path.join(DATA_PATH, 'tfr_test')
 TRAIN_TFR_PATH = os.path.join(DATA_PATH, 'tfr_train')
@@ -40,15 +39,15 @@ WHOLE_REPEAT_NUM = 5
 MIN_TUMOR_NUM = 10
 MIN_CONNECT_TUMOR_NUM = 6
 REPEAT_NUM = 15
-SUMMARY_INTERVAL = 100
-VAL_SUMMARY_INTERVAL = 50
+SUMMARY_INTERVAL = 200
+VAL_SUMMARY_INTERVAL = 200
 VAL_INTERVAL = 5000 * int(32 / BATCH_SIZE)
 NUM_GPU = 2
 PS_TYPE = 'CPU'
 
 DEFAULT_VERSION = 2
 IS_PRO_SHORTCUT = True
-BLOCK_SIZE = [9, 15, 9]
+BLOCK_SIZE = [5, 5, 5]
 
 class Ref(object):
     size = REF_SIZE
